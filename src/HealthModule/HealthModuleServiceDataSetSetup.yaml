@@ -1,0 +1,151 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Health Module service-grain QuickSight DataSet. Explodes MULTIPLE_SERVICES
+  operational events into one row per affected service by parsing the event
+  description, and passes single-service events through unchanged. Produces a
+  per-(event, service) fact table for service-level SLA review.
+
+Parameters:
+  QuickSightAnalysisAuthor:
+    Type: String
+    Description: The QuickSight analysis author Arn allowed to manage this dataset. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
+  HeidiDataCollectionDB:
+    Type: String
+    Description: Athena DataCollection DB
+    Default: "datacollectiondb"
+  HeidiQSDataSourceArn:
+    Type: String
+    Description: QuickSight Datasource Arn.
+  ResourcePrefix:
+    Type: String
+    Default: "heidi-"
+    Description: This prefix will be placed in front of resources created where required.
+
+Outputs:
+  QSDataSetHealthServiceEvent:
+    Value: !GetAtt QSDataSetHealthServiceEvent.Arn
+    Export:
+      Name: !Sub ${ResourcePrefix}QSDataSetHealthServiceEvent
+
+Resources:
+  QSDataSetHealthServiceEvent:
+    # Service-grain dataset: one row per (event, service).
+    # Depends on the awshealthevent Glue table created by HealthModuleDataSetSetup.
+    Type: AWS::QuickSight::DataSet
+    Properties:
+      AwsAccountId: !Sub ${AWS::AccountId}
+      ImportMode: SPICE
+      DataSetId: !Sub "${ResourcePrefix}svc-${AWS::AccountId}-${AWS::Region}"
+      Name: !Sub "${ResourcePrefix}svc-${AWS::AccountId}-${AWS::Region}"
+      PhysicalTableMap:
+        "AWSHealthSvcPT":
+          CustomSql:
+            DataSourceArn: !Ref HeidiQSDataSourceArn
+            Name: !Sub "${ResourcePrefix}svc-${AWS::AccountId}-${AWS::Region}"
+            SqlQuery: !Sub |-
+              WITH latest AS (
+                SELECT
+                  detail.eventarn AS event_arn,
+                  COALESCE(detail.affectedAccount, account) AS affected_account,
+                  detail.eventregion AS region,
+                  detail.service AS service_raw,
+                  detail.eventtypecode AS event_type_code,
+                  detail.eventtypecategory AS event_type_category,
+                  CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,
+                  CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,
+                  detail.eventdescription[1].latestdescription AS descr,
+                  rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk
+                FROM "AwsDataCatalog"."${ResourcePrefix}${HeidiDataCollectionDB}"."awshealthevent"
+              ),
+              parsed AS (
+                SELECT
+                  event_arn, affected_account, region, service_raw,
+                  event_type_code, event_type_category, start_time, end_time,
+                  regexp_extract(descr, 'affected by this event:\s*([^.]*)', 1) AS affected_blob,
+                  regexp_extract(descr, 'now operating normally:\s*([^.]*)', 1) AS recovered_blob
+                FROM latest
+                WHERE rk = 1
+              )
+              SELECT event_arn, affected_account, region, service_raw, event_type_code, event_type_category,
+                     start_time, end_time, 'affected' AS service_status,
+                     trim(regexp_replace(svc, '\([^)]*\)', '')) AS service
+              FROM parsed CROSS JOIN UNNEST(split(affected_blob, ',')) AS t(svc)
+              WHERE affected_blob <> '' AND trim(regexp_replace(svc, '\([^)]*\)', '')) <> ''
+              UNION ALL
+              SELECT event_arn, affected_account, region, service_raw, event_type_code, event_type_category,
+                     start_time, end_time, 'recovered' AS service_status,
+                     trim(regexp_replace(svc, '\([^)]*\)', '')) AS service
+              FROM parsed CROSS JOIN UNNEST(split(recovered_blob, ',')) AS t(svc)
+              WHERE recovered_blob <> '' AND trim(regexp_replace(svc, '\([^)]*\)', '')) <> ''
+              UNION ALL
+              SELECT event_arn, affected_account, region, service_raw, event_type_code, event_type_category,
+                     start_time, end_time, 'single' AS service_status,
+                     service_raw AS service
+              FROM parsed
+              WHERE service_raw <> 'MULTIPLE_SERVICES'
+            Columns:
+              - Name: event_arn
+                Type: STRING
+              - Name: affected_account
+                Type: STRING
+              - Name: region
+                Type: STRING
+              - Name: service_raw
+                Type: STRING
+              - Name: event_type_code
+                Type: STRING
+              - Name: event_type_category
+                Type: STRING
+              - Name: start_time
+                Type: DATETIME
+              - Name: end_time
+                Type: DATETIME
+              - Name: service_status
+                Type: STRING
+              - Name: service
+                Type: STRING
+      LogicalTableMap:
+        "AWSHealthSvcLT":
+          Alias: !Sub "awshealthservices-${AWS::AccountId}-${AWS::Region}"
+          DataTransforms:
+            - ProjectOperation:
+                ProjectedColumns:
+                  - event_arn
+                  - affected_account
+                  - region
+                  - service_raw
+                  - event_type_code
+                  - event_type_category
+                  - start_time
+                  - end_time
+                  - service_status
+                  - service
+          Source:
+            PhysicalTableId: "AWSHealthSvcPT"
+      Permissions:
+        - Principal: !Sub "${QuickSightAnalysisAuthor}"
+          Actions:
+            - quicksight:DescribeDataSet
+            - quicksight:DescribeDataSetPermissions
+            - quicksight:PassDataSet
+            - quicksight:DescribeIngestion
+            - quicksight:ListIngestions
+            - quicksight:UpdateDataSet
+            - quicksight:DeleteDataSet
+            - quicksight:CreateIngestion
+            - quicksight:CancelIngestion
+            - quicksight:UpdateDataSetPermissions
+
+  QSDataSetHealthServiceEventRefresh:
+    # Keep the service-grain SPICE import in step with the event-grain dataset.
+    DependsOn: QSDataSetHealthServiceEvent
+    Type: AWS::QuickSight::RefreshSchedule
+    Properties:
+      AwsAccountId: !Sub ${AWS::AccountId}
+      DataSetId: !Sub "${ResourcePrefix}svc-${AWS::AccountId}-${AWS::Region}"
+      Schedule:
+        RefreshType: FULL_REFRESH
+        ScheduleFrequency:
+          Interval: HOURLY
+        ScheduleId: QSDataSetHealthServiceEventRefresh

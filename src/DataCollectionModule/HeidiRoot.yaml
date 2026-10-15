@@ -180,3 +180,15 @@ Resources:
         QSDataSetHealthEvent: !GetAtt HealthModuleDataSetSetup.Outputs.QSDataSetHealthEvent
         EventDetailUrl: !If [ EnableHealthEventUrl, !GetAtt HealthModuleEventUrlSetup.Outputs.EventDetailApiEndpoint, "https://example.com" ]
         ResourcePrefix: !Ref ResourcePrefix
+
+  HealthModuleServiceDataSetSetup:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: HealthModuleDataSetSetup
+    Condition: EnableHealthModule
+    Properties:
+      TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleServiceDataSetSetup.yaml
+      Parameters:
+        QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
+        HeidiDataCollectionDB: !GetAtt DataCollectionModule.Outputs.HeidiDataCollectionDB
+        HeidiQSDataSourceArn: !GetAtt DataCollectionModule.Outputs.HeidiQSDataSourceArn
+        ResourcePrefix: !Ref ResourcePrefix
