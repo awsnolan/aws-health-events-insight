@@ -2,4 +2,8 @@
 !/.gitignore
 !/.github
 src/Setup/utils/*.txt
-./src/Setup/utils/__pycache__/
+__pycache__/
+*.pyc
+build.log
+src/Setup/lf-settings.json
+checkpoint_*.json
