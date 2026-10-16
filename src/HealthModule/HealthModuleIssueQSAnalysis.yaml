@@ -64,7 +64,8 @@ Resources:
                   Configuration:
                     FilterListConfiguration:
                       MatchOperator: CONTAINS
-                      NullOption: ALL_VALUES
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
               - CategoryFilter:
                   FilterId: flt-service
                   Column:
@@ -73,7 +74,8 @@ Resources:
                   Configuration:
                     FilterListConfiguration:
                       MatchOperator: CONTAINS
-                      NullOption: ALL_VALUES
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
               - CategoryFilter:
                   FilterId: flt-status
                   Column:
@@ -82,7 +84,8 @@ Resources:
                   Configuration:
                     FilterListConfiguration:
                       MatchOperator: CONTAINS
-                      NullOption: ALL_VALUES
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
             ScopeConfiguration:
               SelectedSheets:
                 SheetVisualScopingConfigurations:
