@@ -45,7 +45,7 @@ Resources:
           - Identifier: "ServiceDS"
             DataSetArn: !Ref QSDataSetHealthServiceEvent
         FilterGroups:
-          - FilterGroupId: fg-issue
+          - FilterGroupId: fg-time
             CrossDataset: SINGLE_DATASET
             Status: ENABLED
             Filters:
@@ -54,8 +54,25 @@ Resources:
                   Column:
                     DataSetIdentifier: "IssueDS"
                     ColumnName: start_time
-                  NullOption: ALL_VALUES
-                  TimeGranularity: SECOND
+                  IncludeMinimum: true
+                  IncludeMaximum: false
+                  RangeMinimumValue:
+                    RollingDate:
+                      Expression: addDateTime(-1, 'YYYY', truncDate('YYYY', now()))
+                  RangeMaximumValue:
+                    RollingDate:
+                      Expression: addDateTime(-1, 'SS', addDateTime(2, 'YYYY', truncDate('YYYY', now())))
+                  NullOption: NON_NULLS_ONLY
+                  TimeGranularity: DAY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-region
+            CrossDataset: SINGLE_DATASET
+            Status: ENABLED
+            Filters:
               - CategoryFilter:
                   FilterId: flt-region
                   Column:
@@ -66,6 +83,15 @@ Resources:
                       MatchOperator: CONTAINS
                       SelectAllOptions: FILTER_ALL_VALUES
                       NullOption: NON_NULLS_ONLY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-service
+            CrossDataset: SINGLE_DATASET
+            Status: ENABLED
+            Filters:
               - CategoryFilter:
                   FilterId: flt-service
                   Column:
@@ -76,6 +102,15 @@ Resources:
                       MatchOperator: CONTAINS
                       SelectAllOptions: FILTER_ALL_VALUES
                       NullOption: NON_NULLS_ONLY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-status
+            CrossDataset: SINGLE_DATASET
+            Status: ENABLED
+            Filters:
               - CategoryFilter:
                   FilterId: flt-status
                   Column:
