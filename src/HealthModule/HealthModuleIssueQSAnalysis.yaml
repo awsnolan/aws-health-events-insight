@@ -55,13 +55,13 @@ Resources:
                     DataSetIdentifier: "IssueDS"
                     ColumnName: start_time
                   IncludeMinimum: true
-                  IncludeMaximum: true
+                  IncludeMaximum: false
                   RangeMinimumValue:
                     RollingDate:
-                      Expression: addDateTime(-1, 'YYYY', now())
+                      Expression: addDateTime(-12, 'MM', truncDate('DD', now()))
                   RangeMaximumValue:
                     RollingDate:
-                      Expression: now()
+                      Expression: addDateTime(1, 'DD', truncDate('DD', now()))
                   NullOption: NON_NULLS_ONLY
                   TimeGranularity: DAY
             ScopeConfiguration:
