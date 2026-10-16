@@ -159,3 +159,20 @@ The rule matches `aws.health`, `heidi.health`, and `awshealthtest` sources with
 `detail.eventTypeCategory = issue`, so backfilled and real-time interruptions
 both create tickets. Scope further to region-wide events by adding
 `eventScopeCode: ["PUBLIC"]` to the rule's `EventPattern`.
+
+### Issue SLA analysis (visuals as code)
+
+- **`src/HealthModule/HealthModuleIssueQSAnalysis.yaml`** (new) — a QuickSight
+  `AWS::QuickSight::Analysis` built on the issue and service-grain datasets. One
+  sheet with: KPIs (distinct interruptions, summed downtime hours, accounts
+  impacted), downtime-hours-by-service and interruptions-by-region bars, a
+  per-service breakdown bar off the exploded service dataset, and an interruption
+  detail table. Time/region/service/status filter controls scope the
+  issue-dataset visuals.
+- **`src/DataCollectionModule/HeidiRoot.yaml`** (changed) — wires the analysis as
+  a nested stack under `EnableHealthModule`, dependent on both dataset stacks and
+  fed their output ARNs.
+
+QuickSight analysis definitions validate only at deploy (cfn-lint coverage is
+partial). Expect to iterate on schema nits (field-well shapes, filter/layout
+specifics) during the first deploy.

@@ -237,3 +237,14 @@ Resources:
         JiraBaseUrl: !Ref JiraBaseUrl
         JiraProjectKey: !Ref JiraProjectKey
         JiraSecretArn: !Ref JiraSecretArn
+
+  HealthModuleIssueQSAnalysis:
+    Type: AWS::CloudFormation::Stack
+    Condition: EnableHealthModule
+    Properties:
+      TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleIssueQSAnalysis.yaml
+      Parameters:
+        QSDataSetHealthIssueEvent: !GetAtt HealthModuleIssueDataSetSetup.Outputs.QSDataSetHealthIssueEvent
+        QSDataSetHealthServiceEvent: !GetAtt HealthModuleServiceDataSetSetup.Outputs.QSDataSetHealthServiceEvent
+        QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
+        ResourcePrefix: !Ref ResourcePrefix
