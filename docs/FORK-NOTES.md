@@ -117,3 +117,45 @@ consistent for region-wide operational events but is not a contract. Treat an
 event whose `MULTIPLE_SERVICES` description yields no parsed services as "needs
 manual review," and corroborate anything used for SLA/credit claims against the
 authoritative AWS Health Dashboard service-history post for that event.
+
+## Issue-focused SLA build
+
+Scopes the analytical and action layers to service-interruption events
+(`eventTypeCategory = 'issue'`) for SLA / service-credit evaluation, while
+ingestion and the S3 lake remain broad (all categories kept). "Broad lake,
+narrow SPICE and dashboard."
+
+- **`src/HealthModule/HealthModuleIssueDataSetSetup.yaml`** (new) — event-grain,
+  issue-only QuickSight dataset. Deduped to latest row per event; emits service,
+  region, scope (PUBLIC / account-specific), start/end, normalized status, and
+  computed `duration_hours`.
+- **`src/HealthModule/HealthModuleServiceDataSetSetup.yaml`** (changed) — now
+  scoped to `issue` (added `WHERE detail.eventtypecategory = 'issue'` in the
+  `latest` CTE). Still explodes `MULTIPLE_SERVICES` operational issues into one
+  row per affected service; single-service issue events pass through.
+- **`src/CreditModule/CreditTicketModule.yaml`** (new) — EventBridge rule on the
+  central bus filtered to `issue` → idempotent Lambda → Jira "evaluate for SLA
+  service credit" ticket. One ticket per `eventArn` (DynamoDB idempotency table);
+  later updates comment instead of duplicating. Jira creds in Secrets Manager,
+  DLQ on the rule target and Lambda, reserved concurrency = 2, 429 retry/backoff.
+- **`src/DataCollectionModule/HeidiRoot.yaml`** (changed) — wires the issue
+  dataset (under `EnableHealthModule`) and the credit module (opt-in via new
+  `EnableCreditModule` parameter, default `no`, with `JiraBaseUrl`,
+  `JiraProjectKey`, `JiraSecretArn`).
+
+### Deploying the credit module
+
+Opt-in; default deploys are unaffected. Create the Jira secret, then enable:
+
+```
+aws secretsmanager create-secret --name heidi-jira --region <REGION> \
+  --secret-string '{"email":"<jira-user-email>","apiToken":"<token>"}'
+```
+
+Add to the SAM deploy parameter overrides:
+`EnableCreditModule=yes JiraBaseUrl=https://<org>.atlassian.net JiraProjectKey=<KEY> JiraSecretArn=<secret-arn>`
+
+The rule matches `aws.health`, `heidi.health`, and `awshealthtest` sources with
+`detail.eventTypeCategory = issue`, so backfilled and real-time interruptions
+both create tickets. Scope further to region-wide events by adding
+`eventScopeCode: ["PUBLIC"]` to the rule's `EventPattern`.

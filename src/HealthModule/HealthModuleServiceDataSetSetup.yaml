@@ -1,10 +1,11 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Health Module service-grain QuickSight DataSet. Explodes MULTIPLE_SERVICES
-  operational events into one row per affected service by parsing the event
-  description, and passes single-service events through unchanged. Produces a
-  per-(event, service) fact table for service-level SLA review.
+  Health Module service-grain QuickSight DataSet. Scoped to service-interruption
+  events only (eventTypeCategory = 'issue'). Explodes MULTIPLE_SERVICES
+  operational issues into one row per affected service by parsing the event
+  description, and passes single-service issue events through unchanged. Produces
+  a per-(event, service) fact table for service-level SLA / credit review.
 
 Parameters:
   QuickSightAnalysisAuthor:
@@ -57,6 +58,7 @@ Resources:
                   detail.eventdescription[1].latestdescription AS descr,
                   rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk
                 FROM "AwsDataCatalog"."${ResourcePrefix}${HeidiDataCollectionDB}"."awshealthevent"
+                WHERE detail.eventtypecategory = 'issue'
               ),
               parsed AS (
                 SELECT

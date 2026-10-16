@@ -80,9 +80,29 @@ Parameters:
     Type: String
     Description: If EnableNotificationModule, ensure that the TeamsChannelId is provided when the channel is Slack.
     Default: "na"
+  EnableCreditModule:
+    Type: String
+    Description: "Optional: Open Jira SLA service-credit tickets for service-interruption (issue) events."
+    Default: "no"
+    AllowedValues:
+      - "yes"
+      - "no"
+  JiraBaseUrl:
+    Type: String
+    Default: "na"
+    Description: If EnableCreditModule, Jira Cloud base URL, e.g. https://yourorg.atlassian.net
+  JiraProjectKey:
+    Type: String
+    Default: "na"
+    Description: If EnableCreditModule, Jira project key that receives credit-evaluation tickets.
+  JiraSecretArn:
+    Type: String
+    Default: "na"
+    Description: If EnableCreditModule, Secrets Manager ARN holding Jira email/apiToken.
 
 Conditions:
   EnableHealthModule: !Equals [ !Ref EnableHealthModule, "yes"]
+  EnableCreditModule: !Equals [ !Ref EnableCreditModule, "yes"]
   EnableHealthEventUrl: !Equals [ !Ref EnableHealthEventUrl, "yes"]
   EnableNotificationModule: !Equals [ !Ref EnableNotificationModule, "yes"]
   Enabletaginfo: !Equals [ !Ref Enabletaginfo, "yes"]
@@ -192,3 +212,28 @@ Resources:
         HeidiDataCollectionDB: !GetAtt DataCollectionModule.Outputs.HeidiDataCollectionDB
         HeidiQSDataSourceArn: !GetAtt DataCollectionModule.Outputs.HeidiQSDataSourceArn
         ResourcePrefix: !Ref ResourcePrefix
+
+  HealthModuleIssueDataSetSetup:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: HealthModuleDataSetSetup
+    Condition: EnableHealthModule
+    Properties:
+      TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleIssueDataSetSetup.yaml
+      Parameters:
+        QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
+        HeidiDataCollectionDB: !GetAtt DataCollectionModule.Outputs.HeidiDataCollectionDB
+        HeidiQSDataSourceArn: !GetAtt DataCollectionModule.Outputs.HeidiQSDataSourceArn
+        ResourcePrefix: !Ref ResourcePrefix
+
+  HealthModuleCreditTicketSetup:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: DataCollectionModule
+    Condition: EnableCreditModule
+    Properties:
+      TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/CreditModule/CreditTicketModule.yaml
+      Parameters:
+        DataCollectionAccountID: !Sub ${AWS::AccountId}
+        ResourcePrefix: !Ref ResourcePrefix
+        JiraBaseUrl: !Ref JiraBaseUrl
+        JiraProjectKey: !Ref JiraProjectKey
+        JiraSecretArn: !Ref JiraSecretArn
