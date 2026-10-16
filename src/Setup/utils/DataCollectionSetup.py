@@ -36,7 +36,11 @@ def get_organization_details():
     # Get the ID of the AWS organization for event bus
     AdditionalOrgs = ''
     org_client = boto3.client('organizations')
-    OrgID = org_client.describe_organization()['Organization']['Id']
+    try:
+        OrgID = org_client.describe_organization()['Organization']['Id']
+    except Exception as e:
+        print(f"Could not auto-detect Organization ID ({e.__class__.__name__}): current credentials cannot call organizations:DescribeOrganization.")
+        OrgID = input("Enter your AWS Organization ID (format o-xxxxxxxxxx). For a single-account test any placeholder is fine: ").strip()
     AdditionalOrgsRequired = ask_yes_no(f"You will get events from OrganizationId {OrgID}. Do you want to add additional Payers/Organization Ids")
     if AdditionalOrgsRequired:
         AdditionalOrgs = input(f"Enter organizations IDs with comma seperated: ")

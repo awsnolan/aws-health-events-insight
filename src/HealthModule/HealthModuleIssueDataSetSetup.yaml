@@ -1,0 +1,148 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Health Module issue-focused (event-grain) QuickSight DataSet. Scopes to
+  service-interruption events only (eventTypeCategory = 'issue'), deduplicated to
+  the latest row per event, with computed outage duration and normalized status
+  for SLA / service-credit evaluation.
+
+Parameters:
+  QuickSightAnalysisAuthor:
+    Type: String
+    Description: The QuickSight analysis author Arn allowed to manage this dataset. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
+  HeidiDataCollectionDB:
+    Type: String
+    Description: Athena DataCollection DB
+    Default: "datacollectiondb"
+  HeidiQSDataSourceArn:
+    Type: String
+    Description: QuickSight Datasource Arn.
+  ResourcePrefix:
+    Type: String
+    Default: "heidi-"
+    Description: This prefix will be placed in front of resources created where required.
+
+Outputs:
+  QSDataSetHealthIssueEvent:
+    Value: !GetAtt QSDataSetHealthIssueEvent.Arn
+    Export:
+      Name: !Sub ${ResourcePrefix}QSDataSetHealthIssueEvent
+
+Resources:
+  QSDataSetHealthIssueEvent:
+    # Event-grain, issue-only dataset for SLA / service-credit review.
+    # Depends on the awshealthevent Glue table created by HealthModuleDataSetSetup.
+    Type: AWS::QuickSight::DataSet
+    Properties:
+      AwsAccountId: !Sub ${AWS::AccountId}
+      ImportMode: SPICE
+      DataSetId: !Sub "${ResourcePrefix}issue-${AWS::AccountId}-${AWS::Region}"
+      Name: !Sub "${ResourcePrefix}issue-${AWS::AccountId}-${AWS::Region}"
+      PhysicalTableMap:
+        "AWSHealthIssuePT":
+          CustomSql:
+            DataSourceArn: !Ref HeidiQSDataSourceArn
+            Name: !Sub "${ResourcePrefix}issue-${AWS::AccountId}-${AWS::Region}"
+            SqlQuery: !Sub |-
+              WITH latest AS (
+                SELECT
+                  detail.eventarn AS event_arn,
+                  COALESCE(detail.affectedAccount, account) AS affected_account,
+                  detail.service AS service,
+                  detail.eventregion AS region,
+                  detail.eventscopecode AS scope,
+                  detail.eventtypecode AS event_type_code,
+                  detail.statuscode AS raw_status,
+                  SUBSTRING(detail.eventdescription[1].latestdescription, 1, 2000) AS description,
+                  CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,
+                  CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,
+                  CAST(date_parse(detail.lastupdatedtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS last_updated_time,
+                  rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk
+                FROM "AwsDataCatalog"."${ResourcePrefix}${HeidiDataCollectionDB}"."awshealthevent"
+                WHERE detail.eventtypecategory = 'issue'
+              )
+              SELECT
+                event_arn,
+                affected_account,
+                service,
+                region,
+                scope,
+                event_type_code,
+                start_time,
+                end_time,
+                last_updated_time,
+                CASE WHEN end_time IS NULL THEN 'open' ELSE COALESCE(raw_status, 'closed') END AS status,
+                CAST(date_diff('hour', start_time, end_time) AS BIGINT) AS duration_hours,
+                description
+              FROM latest
+              WHERE rk = 1
+            Columns:
+              - Name: event_arn
+                Type: STRING
+              - Name: affected_account
+                Type: STRING
+              - Name: service
+                Type: STRING
+              - Name: region
+                Type: STRING
+              - Name: scope
+                Type: STRING
+              - Name: event_type_code
+                Type: STRING
+              - Name: start_time
+                Type: DATETIME
+              - Name: end_time
+                Type: DATETIME
+              - Name: last_updated_time
+                Type: DATETIME
+              - Name: status
+                Type: STRING
+              - Name: duration_hours
+                Type: INTEGER
+              - Name: description
+                Type: STRING
+      LogicalTableMap:
+        "AWSHealthIssueLT":
+          Alias: !Sub "awshealthissues-${AWS::AccountId}-${AWS::Region}"
+          DataTransforms:
+            - ProjectOperation:
+                ProjectedColumns:
+                  - event_arn
+                  - affected_account
+                  - service
+                  - region
+                  - scope
+                  - event_type_code
+                  - start_time
+                  - end_time
+                  - last_updated_time
+                  - status
+                  - duration_hours
+                  - description
+          Source:
+            PhysicalTableId: "AWSHealthIssuePT"
+      Permissions:
+        - Principal: !Sub "${QuickSightAnalysisAuthor}"
+          Actions:
+            - quicksight:DescribeDataSet
+            - quicksight:DescribeDataSetPermissions
+            - quicksight:PassDataSet
+            - quicksight:DescribeIngestion
+            - quicksight:ListIngestions
+            - quicksight:UpdateDataSet
+            - quicksight:DeleteDataSet
+            - quicksight:CreateIngestion
+            - quicksight:CancelIngestion
+            - quicksight:UpdateDataSetPermissions
+
+  QSDataSetHealthIssueEventRefresh:
+    DependsOn: QSDataSetHealthIssueEvent
+    Type: AWS::QuickSight::RefreshSchedule
+    Properties:
+      AwsAccountId: !Sub ${AWS::AccountId}
+      DataSetId: !Sub "${ResourcePrefix}issue-${AWS::AccountId}-${AWS::Region}"
+      Schedule:
+        RefreshType: FULL_REFRESH
+        ScheduleFrequency:
+          Interval: HOURLY
+        ScheduleId: QSDataSetHealthIssueEventRefresh

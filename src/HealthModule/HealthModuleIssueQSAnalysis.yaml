@@ -1,0 +1,401 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Health Module issue-focused QuickSight Analysis (SLA / service-credit view).
+  Built on the issue event-grain dataset and the service-grain (MULTIPLE_SERVICES
+  exploded) dataset. One sheet: interruption KPIs, downtime by service, by
+  region, per-service breakdown, and an interruption detail table.
+
+Parameters:
+  QSDataSetHealthIssueEvent:
+    Type: String
+    Description: ARN of the issue event-grain dataset.
+  QSDataSetHealthServiceEvent:
+    Type: String
+    Description: ARN of the service-grain (exploded) dataset.
+  QuickSightAnalysisAuthor:
+    Type: String
+    Description: QuickSight user ARN allowed to manage the analysis.
+  ResourcePrefix:
+    Type: String
+    Default: "heidi-"
+    Description: Prefix on created resources.
+
+Resources:
+  AWSHealthIssueAnalysis:
+    Type: AWS::QuickSight::Analysis
+    Properties:
+      AwsAccountId: !Sub "${AWS::AccountId}"
+      AnalysisId: !Sub "${ResourcePrefix}issue-analysis-${AWS::AccountId}-${AWS::Region}"
+      Name: !Sub "${ResourcePrefix}issue-analysis-${AWS::AccountId}-${AWS::Region}"
+      Permissions:
+        - Principal: !Ref QuickSightAnalysisAuthor
+          Actions:
+            - quicksight:RestoreAnalysis
+            - quicksight:UpdateAnalysisPermissions
+            - quicksight:DeleteAnalysis
+            - quicksight:DescribeAnalysisPermissions
+            - quicksight:QueryAnalysis
+            - quicksight:DescribeAnalysis
+            - quicksight:UpdateAnalysis
+      Definition:
+        DataSetIdentifierDeclarations:
+          - Identifier: "IssueDS"
+            DataSetArn: !Ref QSDataSetHealthIssueEvent
+          - Identifier: "ServiceDS"
+            DataSetArn: !Ref QSDataSetHealthServiceEvent
+        FilterGroups:
+          - FilterGroupId: fg-time
+            CrossDataset: ALL_DATASETS
+            Status: ENABLED
+            Filters:
+              - TimeRangeFilter:
+                  FilterId: flt-time
+                  Column:
+                    DataSetIdentifier: "IssueDS"
+                    ColumnName: start_time
+                  IncludeMinimum: true
+                  IncludeMaximum: false
+                  RangeMinimumValue:
+                    RollingDate:
+                      Expression: addDateTime(-1, 'YYYY', truncDate('YYYY', now()))
+                  RangeMaximumValue:
+                    RollingDate:
+                      Expression: addDateTime(-1, 'SS', addDateTime(1, 'YYYY', truncDate('YYYY', now())))
+                  NullOption: NON_NULLS_ONLY
+                  TimeGranularity: DAY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-region
+            CrossDataset: ALL_DATASETS
+            Status: ENABLED
+            Filters:
+              - CategoryFilter:
+                  FilterId: flt-region
+                  Column:
+                    DataSetIdentifier: "IssueDS"
+                    ColumnName: region
+                  Configuration:
+                    FilterListConfiguration:
+                      MatchOperator: CONTAINS
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-service
+            CrossDataset: ALL_DATASETS
+            Status: ENABLED
+            Filters:
+              - CategoryFilter:
+                  FilterId: flt-service
+                  Column:
+                    DataSetIdentifier: "IssueDS"
+                    ColumnName: service
+                  Configuration:
+                    FilterListConfiguration:
+                      MatchOperator: CONTAINS
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+          - FilterGroupId: fg-status
+            CrossDataset: SINGLE_DATASET
+            Status: ENABLED
+            Filters:
+              - CategoryFilter:
+                  FilterId: flt-status
+                  Column:
+                    DataSetIdentifier: "IssueDS"
+                    ColumnName: status
+                  Configuration:
+                    FilterListConfiguration:
+                      MatchOperator: CONTAINS
+                      SelectAllOptions: FILTER_ALL_VALUES
+                      NullOption: NON_NULLS_ONLY
+            ScopeConfiguration:
+              SelectedSheets:
+                SheetVisualScopingConfigurations:
+                  - SheetId: sheet-sla
+                    Scope: ALL_VISUALS
+        Sheets:
+          - SheetId: sheet-sla
+            Name: "SLA / Interruptions"
+            Title: "AWS Health Service Interruptions - SLA / Credit View"
+            FilterControls:
+              - DateTimePicker:
+                  FilterControlId: ctl-time
+                  Title: "Time Frame (start)"
+                  SourceFilterId: flt-time
+                  Type: DATE_RANGE
+              - List:
+                  FilterControlId: ctl-region
+                  Title: "Region"
+                  SourceFilterId: flt-region
+                  Type: MULTI_SELECT
+              - List:
+                  FilterControlId: ctl-service
+                  Title: "Service"
+                  SourceFilterId: flt-service
+                  Type: MULTI_SELECT
+              - List:
+                  FilterControlId: ctl-status
+                  Title: "Status"
+                  SourceFilterId: flt-status
+                  Type: MULTI_SELECT
+            Visuals:
+              - InsightVisual:
+                  VisualId: kpi-interruptions
+                  Title:
+                    Visibility: HIDDEN
+                    FormatText:
+                      RichText: "<visual-title>Interruptions</visual-title>"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  DataSetIdentifier: "IssueDS"
+                  InsightConfiguration:
+                    Computations:
+                      - TotalAggregation:
+                          ComputationId: comp-interruptions
+                          Name: Interruptions
+                          Value:
+                            CategoricalMeasureField:
+                              FieldId: issue.eventarn.dc
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: event_arn
+                              AggregationFunction: DISTINCT_COUNT
+                    CustomNarrative:
+                      Narrative: |-
+                        <narrative>
+                          <block align="center"><inline font-size="22.4px">Interruptions</inline></block>
+                          <br/>
+                          <block align="center"><inline font-size="22.4px"><expression>Interruptions.totalAggregate.formattedValue</expression></inline></block>
+                        </narrative>
+                  Actions: []
+              - InsightVisual:
+                  VisualId: kpi-downtime
+                  Title:
+                    Visibility: HIDDEN
+                    FormatText:
+                      RichText: "<visual-title>Downtime Hours</visual-title>"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  DataSetIdentifier: "IssueDS"
+                  InsightConfiguration:
+                    Computations:
+                      - TotalAggregation:
+                          ComputationId: comp-downtime
+                          Name: DowntimeHours
+                          Value:
+                            NumericalMeasureField:
+                              FieldId: issue.duration.sum
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: duration_hours
+                              AggregationFunction:
+                                SimpleNumericalAggregation: SUM
+                    CustomNarrative:
+                      Narrative: |-
+                        <narrative>
+                          <block align="center"><inline font-size="22.4px">Downtime Hours</inline></block>
+                          <br/>
+                          <block align="center"><inline font-size="22.4px"><expression>DowntimeHours.totalAggregate.formattedValue</expression></inline></block>
+                        </narrative>
+                  Actions: []
+              - InsightVisual:
+                  VisualId: kpi-accounts
+                  Title:
+                    Visibility: HIDDEN
+                    FormatText:
+                      RichText: "<visual-title>Accounts Impacted</visual-title>"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  DataSetIdentifier: "IssueDS"
+                  InsightConfiguration:
+                    Computations:
+                      - TotalAggregation:
+                          ComputationId: comp-accounts
+                          Name: Accounts
+                          Value:
+                            CategoricalMeasureField:
+                              FieldId: issue.account.dc
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: affected_account
+                              AggregationFunction: DISTINCT_COUNT
+                    CustomNarrative:
+                      Narrative: |-
+                        <narrative>
+                          <block align="center"><inline font-size="22.4px">Accounts Impacted</inline></block>
+                          <br/>
+                          <block align="center"><inline font-size="22.4px"><expression>Accounts.totalAggregate.formattedValue</expression></inline></block>
+                        </narrative>
+                  Actions: []
+              - BarChartVisual:
+                  VisualId: bar-downtime-service
+                  Title:
+                    Visibility: VISIBLE
+                    FormatText:
+                      PlainText: "Downtime hours by service"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  ChartConfiguration:
+                    FieldWells:
+                      BarChartAggregatedFieldWells:
+                        Category:
+                          - CategoricalDimensionField:
+                              FieldId: issue.service.cat
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: service
+                        Values:
+                          - NumericalMeasureField:
+                              FieldId: issue.duration.sum2
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: duration_hours
+                              AggregationFunction:
+                                SimpleNumericalAggregation: SUM
+                    SortConfiguration:
+                      CategorySort:
+                        - FieldSort:
+                            FieldId: issue.duration.sum2
+                            Direction: DESC
+                    Orientation: HORIZONTAL
+                    BarsArrangement: CLUSTERED
+                  Actions: []
+                  ColumnHierarchies: []
+              - BarChartVisual:
+                  VisualId: bar-interruptions-region
+                  Title:
+                    Visibility: VISIBLE
+                    FormatText:
+                      PlainText: "Interruptions by region"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  ChartConfiguration:
+                    FieldWells:
+                      BarChartAggregatedFieldWells:
+                        Category:
+                          - CategoricalDimensionField:
+                              FieldId: issue.region.cat
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: region
+                        Values:
+                          - CategoricalMeasureField:
+                              FieldId: issue.eventarn.dc2
+                              Column:
+                                DataSetIdentifier: "IssueDS"
+                                ColumnName: event_arn
+                              AggregationFunction: DISTINCT_COUNT
+                    SortConfiguration:
+                      CategorySort:
+                        - FieldSort:
+                            FieldId: issue.eventarn.dc2
+                            Direction: DESC
+                    Orientation: HORIZONTAL
+                    BarsArrangement: CLUSTERED
+                  Actions: []
+                  ColumnHierarchies: []
+              - BarChartVisual:
+                  VisualId: bar-per-service
+                  Title:
+                    Visibility: VISIBLE
+                    FormatText:
+                      PlainText: "Per-service interruption count (MULTIPLE_SERVICES exploded)"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  ChartConfiguration:
+                    FieldWells:
+                      BarChartAggregatedFieldWells:
+                        Category:
+                          - CategoricalDimensionField:
+                              FieldId: svc.service.cat
+                              Column:
+                                DataSetIdentifier: "ServiceDS"
+                                ColumnName: service
+                        Values:
+                          - CategoricalMeasureField:
+                              FieldId: svc.eventarn.dc
+                              Column:
+                                DataSetIdentifier: "ServiceDS"
+                                ColumnName: event_arn
+                              AggregationFunction: DISTINCT_COUNT
+                    SortConfiguration:
+                      CategorySort:
+                        - FieldSort:
+                            FieldId: svc.eventarn.dc
+                            Direction: DESC
+                    Orientation: HORIZONTAL
+                    BarsArrangement: CLUSTERED
+                  Actions: []
+                  ColumnHierarchies: []
+              - TableVisual:
+                  VisualId: table-detail
+                  Title:
+                    Visibility: VISIBLE
+                    FormatText:
+                      PlainText: "Interruption detail"
+                  Subtitle:
+                    Visibility: VISIBLE
+                  ChartConfiguration:
+                    FieldWells:
+                      TableUnaggregatedFieldWells:
+                        Values:
+                          - FieldId: t.service
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: service }
+                          - FieldId: t.region
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: region }
+                          - FieldId: t.scope
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: scope }
+                          - FieldId: t.start_time
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: start_time }
+                          - FieldId: t.end_time
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: end_time }
+                          - FieldId: t.duration_hours
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: duration_hours }
+                          - FieldId: t.status
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: status }
+                  Actions: []
+            Layouts:
+              - Configuration:
+                  GridLayout:
+                    Elements:
+                      - ElementId: kpi-interruptions
+                        ElementType: VISUAL
+                        ColumnSpan: 12
+                        RowSpan: 4
+                      - ElementId: kpi-downtime
+                        ElementType: VISUAL
+                        ColumnSpan: 12
+                        RowSpan: 4
+                      - ElementId: kpi-accounts
+                        ElementType: VISUAL
+                        ColumnSpan: 12
+                        RowSpan: 4
+                      - ElementId: bar-downtime-service
+                        ElementType: VISUAL
+                        ColumnSpan: 18
+                        RowSpan: 8
+                      - ElementId: bar-interruptions-region
+                        ElementType: VISUAL
+                        ColumnSpan: 18
+                        RowSpan: 8
+                      - ElementId: bar-per-service
+                        ElementType: VISUAL
+                        ColumnSpan: 36
+                        RowSpan: 8
+                      - ElementId: table-detail
+                        ElementType: VISUAL
+                        ColumnSpan: 36
+                        RowSpan: 10

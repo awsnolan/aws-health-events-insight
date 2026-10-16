@@ -1,0 +1,172 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Credit Module. Opens a Jira "evaluate for SLA service credit" ticket for each
+  AWS Health service-interruption event (eventTypeCategory = 'issue') landing on
+  the HEIDI central event bus. Idempotent per eventArn: later updates to the same
+  event add a comment instead of creating a duplicate ticket.
+
+Parameters:
+  DataCollectionAccountID:
+    Type: String
+    Description: AccountId where the HEIDI collector / central event bus is deployed.
+  ResourcePrefix:
+    Type: String
+    Default: "heidi-"
+    Description: Prefix on created resources; must match the collector deployment.
+  JiraBaseUrl:
+    Type: String
+    Description: Jira Cloud base URL, e.g. https://yourorg.atlassian.net
+  JiraProjectKey:
+    Type: String
+    Description: Jira project key that receives credit-evaluation tickets, e.g. SLA
+  JiraSecretArn:
+    Type: String
+    Description: Secrets Manager ARN holding {"email","apiToken"} for Jira auth.
+
+Resources:
+  CreditIdempotencyTable:
+    # One row per eventArn -> jiraKey so re-emitted events update, not duplicate.
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: eventArn
+          AttributeType: S
+      KeySchema:
+        - AttributeName: eventArn
+          KeyType: HASH
+
+  CreditTicketDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  CreditTicketRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: credit-ticket-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref JiraSecretArn
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                Resource: !GetAtt CreditIdempotencyTable.Arn
+
+  CreditTicketFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: python3.12
+      Timeout: 60
+      MemorySize: 256
+      ReservedConcurrentExecutions: 2
+      Role: !GetAtt CreditTicketRole.Arn
+      DeadLetterConfig:
+        TargetArn: !GetAtt CreditTicketDLQ.Arn
+      Environment:
+        Variables:
+          TABLE: !Ref CreditIdempotencyTable
+          JIRA_BASE_URL: !Ref JiraBaseUrl
+          JIRA_PROJECT_KEY: !Ref JiraProjectKey
+          JIRA_SECRET_ARN: !Ref JiraSecretArn
+      Code:
+        ZipFile: |
+          import os, json, base64, time, urllib.request, urllib.error, boto3
+
+          ddb = boto3.client('dynamodb')
+          sm = boto3.client('secretsmanager')
+          _AUTH = None
+
+          def _auth():
+              global _AUTH
+              if _AUTH is None:
+                  s = json.loads(sm.get_secret_value(SecretId=os.environ['JIRA_SECRET_ARN'])['SecretString'])
+                  _AUTH = base64.b64encode(f"{s['email']}:{s['apiToken']}".encode()).decode()
+              return _AUTH
+
+          def _jira(path, payload, method='POST'):
+              url = os.environ['JIRA_BASE_URL'].rstrip('/') + path
+              body = json.dumps(payload).encode()
+              for attempt in range(5):
+                  req = urllib.request.Request(url, data=body, method=method, headers={
+                      'Authorization': f'Basic {_auth()}', 'Content-Type': 'application/json'})
+                  try:
+                      with urllib.request.urlopen(req, timeout=20) as r:
+                          return json.load(r) if r.length != 0 else {}
+                  except urllib.error.HTTPError as e:
+                      if e.code == 429 and attempt < 4:
+                          time.sleep(2 ** attempt)
+                          continue
+                      raise
+
+          def _doc(text):
+              return {"type": "doc", "version": 1,
+                      "content": [{"type": "paragraph", "content": [{"type": "text", "text": text}]}]}
+
+          def handler(event, _ctx):
+              d = event['detail']
+              arn = d['eventArn']
+              region = d.get('eventRegion', '')
+              service = d.get('service', '')
+              existing = ddb.get_item(TableName=os.environ['TABLE'], Key={'eventArn': {'S': arn}}).get('Item')
+              if existing:
+                  key = existing['jiraKey']['S']
+                  _jira(f"/rest/api/3/issue/{key}/comment",
+                        {"body": _doc(f"Status update: {d.get('statusCode')} "
+                                      f"({d.get('startTime')} - {d.get('endTime', 'ongoing')})")})
+                  return {"updated": key}
+              issue = _jira("/rest/api/3/issue", {"fields": {
+                  "project": {"key": os.environ['JIRA_PROJECT_KEY']},
+                  "issuetype": {"name": "Task"},
+                  "summary": f"[SLA review] {service} interruption in {region}",
+                  "description": _doc(
+                      f"ARN: {arn}\nService: {service}\nRegion: {region}\n"
+                      f"Scope: {d.get('eventScopeCode')}\nStart: {d.get('startTime')}\n"
+                      f"End: {d.get('endTime', 'ongoing')}\nStatus: {d.get('statusCode')}\n\n"
+                      f"Evaluate this interruption for an AWS SLA service credit.")}})
+              ddb.put_item(TableName=os.environ['TABLE'],
+                           Item={'eventArn': {'S': arn}, 'jiraKey': {'S': issue['key']}})
+              return {"created": issue['key']}
+
+  CreditEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Routes AWS Health service-interruption (issue) events to the credit-ticket Lambda"
+      EventBusName: !Sub ${ResourcePrefix}DataCollectionBus-${DataCollectionAccountID}
+      EventPattern:
+        source:
+          - "aws.health"
+          - "heidi.health"
+          - "awshealthtest"
+        detail:
+          eventTypeCategory:
+            - "issue"
+      Targets:
+        - Arn: !GetAtt CreditTicketFunction.Arn
+          Id: creditTicketTarget
+          DeadLetterConfig:
+            Arn: !GetAtt CreditTicketDLQ.Arn
+
+  CreditInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt CreditTicketFunction.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CreditEventRule.Arn
