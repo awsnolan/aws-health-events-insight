@@ -46,7 +46,7 @@ Resources:
             DataSetArn: !Ref QSDataSetHealthServiceEvent
         FilterGroups:
           - FilterGroupId: fg-time
-            CrossDataset: SINGLE_DATASET
+            CrossDataset: ALL_DATASETS
             Status: ENABLED
             Filters:
               - TimeRangeFilter:
@@ -55,13 +55,13 @@ Resources:
                     DataSetIdentifier: "IssueDS"
                     ColumnName: start_time
                   IncludeMinimum: true
-                  IncludeMaximum: false
+                  IncludeMaximum: true
                   RangeMinimumValue:
                     RollingDate:
-                      Expression: addDateTime(-1, 'YYYY', truncDate('YYYY', now()))
+                      Expression: addDateTime(-1, 'YYYY', now())
                   RangeMaximumValue:
                     RollingDate:
-                      Expression: addDateTime(-1, 'SS', addDateTime(2, 'YYYY', truncDate('YYYY', now())))
+                      Expression: now()
                   NullOption: NON_NULLS_ONLY
                   TimeGranularity: DAY
             ScopeConfiguration:
@@ -70,7 +70,7 @@ Resources:
                   - SheetId: sheet-sla
                     Scope: ALL_VISUALS
           - FilterGroupId: fg-region
-            CrossDataset: SINGLE_DATASET
+            CrossDataset: ALL_DATASETS
             Status: ENABLED
             Filters:
               - CategoryFilter:
@@ -89,7 +89,7 @@ Resources:
                   - SheetId: sheet-sla
                     Scope: ALL_VISUALS
           - FilterGroupId: fg-service
-            CrossDataset: SINGLE_DATASET
+            CrossDataset: ALL_DATASETS
             Status: ENABLED
             Filters:
               - CategoryFilter:
@@ -352,8 +352,6 @@ Resources:
                     FieldWells:
                       TableUnaggregatedFieldWells:
                         Values:
-                          - FieldId: t.event_arn
-                            Column: { DataSetIdentifier: "IssueDS", ColumnName: event_arn }
                           - FieldId: t.service
                             Column: { DataSetIdentifier: "IssueDS", ColumnName: service }
                           - FieldId: t.region
