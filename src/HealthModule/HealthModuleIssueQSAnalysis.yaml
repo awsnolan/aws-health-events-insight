@@ -1,10 +1,10 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Health Module issue-focused QuickSight Analysis (SLA / service-credit view).
-  Built on the issue event-grain dataset and the service-grain (MULTIPLE_SERVICES
-  exploded) dataset. One sheet: interruption KPIs, downtime by service, by
-  region, per-service breakdown, and an interruption detail table.
+  Health Module issue-focused QuickSight Analysis (SLA review). Built on the
+  issue event-grain dataset and the service-grain (MULTIPLE_SERVICES exploded)
+  dataset. One sheet: service-event KPIs, impact hours by service, by region,
+  per-service breakdown, and a service-event detail table.
 
 Parameters:
   QSDataSetHealthIssueEvent:
@@ -128,8 +128,8 @@ Resources:
                     Scope: ALL_VISUALS
         Sheets:
           - SheetId: sheet-sla
-            Name: "SLA / Interruptions"
-            Title: "AWS Health Service Interruptions - SLA / Credit View"
+            Name: "SLA Review"
+            Title: "AWS Service Health - SLA Review"
             FilterControls:
               - DateTimePicker:
                   FilterControlId: ctl-time
@@ -157,7 +157,7 @@ Resources:
                   Title:
                     Visibility: HIDDEN
                     FormatText:
-                      RichText: "<visual-title>Interruptions</visual-title>"
+                      RichText: "<visual-title>Service events</visual-title>"
                   Subtitle:
                     Visibility: VISIBLE
                   DataSetIdentifier: "IssueDS"
@@ -165,7 +165,7 @@ Resources:
                     Computations:
                       - TotalAggregation:
                           ComputationId: comp-interruptions
-                          Name: Interruptions
+                          Name: Service events
                           Value:
                             CategoricalMeasureField:
                               FieldId: issue.eventarn.dc
@@ -176,9 +176,9 @@ Resources:
                     CustomNarrative:
                       Narrative: |-
                         <narrative>
-                          <block align="center"><inline font-size="22.4px">Interruptions</inline></block>
+                          <block align="center"><inline font-size="22.4px">Service events</inline></block>
                           <br/>
-                          <block align="center"><inline font-size="22.4px"><expression>Interruptions.totalAggregate.formattedValue</expression></inline></block>
+                          <block align="center"><inline font-size="22.4px"><expression>Service events.totalAggregate.formattedValue</expression></inline></block>
                         </narrative>
                   Actions: []
               - InsightVisual:
@@ -186,7 +186,7 @@ Resources:
                   Title:
                     Visibility: HIDDEN
                     FormatText:
-                      RichText: "<visual-title>Downtime Hours</visual-title>"
+                      RichText: "<visual-title>Impact hours</visual-title>"
                   Subtitle:
                     Visibility: VISIBLE
                   DataSetIdentifier: "IssueDS"
@@ -206,7 +206,7 @@ Resources:
                     CustomNarrative:
                       Narrative: |-
                         <narrative>
-                          <block align="center"><inline font-size="22.4px">Downtime Hours</inline></block>
+                          <block align="center"><inline font-size="22.4px">Impact hours</inline></block>
                           <br/>
                           <block align="center"><inline font-size="22.4px"><expression>DowntimeHours.totalAggregate.formattedValue</expression></inline></block>
                         </narrative>
@@ -216,7 +216,7 @@ Resources:
                   Title:
                     Visibility: HIDDEN
                     FormatText:
-                      RichText: "<visual-title>Accounts Impacted</visual-title>"
+                      RichText: "<visual-title>Accounts affected</visual-title>"
                   Subtitle:
                     Visibility: VISIBLE
                   DataSetIdentifier: "IssueDS"
@@ -235,7 +235,7 @@ Resources:
                     CustomNarrative:
                       Narrative: |-
                         <narrative>
-                          <block align="center"><inline font-size="22.4px">Accounts Impacted</inline></block>
+                          <block align="center"><inline font-size="22.4px">Accounts affected</inline></block>
                           <br/>
                           <block align="center"><inline font-size="22.4px"><expression>Accounts.totalAggregate.formattedValue</expression></inline></block>
                         </narrative>
@@ -245,7 +245,7 @@ Resources:
                   Title:
                     Visibility: VISIBLE
                     FormatText:
-                      PlainText: "Downtime hours by service"
+                      PlainText: "Impact hours by service"
                   Subtitle:
                     Visibility: VISIBLE
                   ChartConfiguration:
@@ -279,7 +279,7 @@ Resources:
                   Title:
                     Visibility: VISIBLE
                     FormatText:
-                      PlainText: "Interruptions by region"
+                      PlainText: "Service events by region"
                   Subtitle:
                     Visibility: VISIBLE
                   ChartConfiguration:
@@ -312,7 +312,7 @@ Resources:
                   Title:
                     Visibility: VISIBLE
                     FormatText:
-                      PlainText: "Per-service interruption count (MULTIPLE_SERVICES exploded)"
+                      PlainText: "Service events by affected service (multi-service breakdown)"
                   Subtitle:
                     Visibility: VISIBLE
                   ChartConfiguration:
@@ -345,7 +345,7 @@ Resources:
                   Title:
                     Visibility: VISIBLE
                     FormatText:
-                      PlainText: "Interruption detail"
+                      PlainText: "Service event detail"
                   Subtitle:
                     Visibility: VISIBLE
                   ChartConfiguration:
@@ -373,29 +373,43 @@ Resources:
                     Elements:
                       - ElementId: kpi-interruptions
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: kpi-downtime
                         ElementType: VISUAL
+                        ColumnIndex: 12
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: kpi-accounts
                         ElementType: VISUAL
+                        ColumnIndex: 24
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: bar-downtime-service
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 18
+                        RowIndex: 4
                         RowSpan: 8
                       - ElementId: bar-interruptions-region
                         ElementType: VISUAL
+                        ColumnIndex: 18
                         ColumnSpan: 18
+                        RowIndex: 4
                         RowSpan: 8
                       - ElementId: bar-per-service
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 36
+                        RowIndex: 12
                         RowSpan: 8
                       - ElementId: table-detail
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 36
+                        RowIndex: 20
                         RowSpan: 10

@@ -176,3 +176,24 @@ both create tickets. Scope further to region-wide events by adding
 QuickSight analysis definitions validate only at deploy (cfn-lint coverage is
 partial). Expect to iterate on schema nits (field-well shapes, filter/layout
 specifics) during the first deploy.
+
+### Dashboard polish & S3 output option
+
+- **Panel labels** use neutral vocabulary (no "credit"/"outage"/"downtime"):
+  "service events", "impact hours", "accounts affected", "SLA review".
+- **Layout** uses explicit grid indices for deterministic placement.
+- **`src/OutputModule/S3ExtractModule.yaml`** (new) — scheduled Lambda that runs
+  the issue and service-grain SQL via Athena and writes CSV or JSON to
+  `s3://<DataCollectionBucket>/heidi-extracts/<dataset>/run=<ts>/`. CSV uses a
+  plain Athena query result copied to the prefix; JSON uses `UNLOAD`. Reads via
+  IAM (covered by the existing `IAM_ALLOWED_PRINCIPALS` grant).
+- **`HeidiRoot.yaml`** toggles:
+  - `EnableIssueDashboards` (default `yes`) — the issue/service datasets and
+    analysis. Set `no` to skip the SPICE/analysis cost.
+  - `EnableS3Extract` (default `no`), `ExtractFormat` (CSV|JSON),
+    `ExtractSchedule`. For S3-only output: `EnableIssueDashboards=no` +
+    `EnableS3Extract=yes`. The base Glue table (from `HealthModuleDataSetSetup`)
+    always deploys, since the extract queries it.
+
+Not yet deploy-validated: the extract Lambda + Athena `UNLOAD`/CSV paths only
+prove out on a scheduled run. Trigger the Lambda manually after deploy to verify.

@@ -99,10 +99,33 @@ Parameters:
     Type: String
     Default: "na"
     Description: If EnableCreditModule, Secrets Manager ARN holding Jira email/apiToken.
+  EnableIssueDashboards:
+    Type: String
+    Default: "yes"
+    AllowedValues: [ "yes", "no" ]
+    Description: Deploy the issue/SLA QuickSight datasets and analysis. Set "no" with EnableS3Extract "yes" for S3-only output.
+  EnableS3Extract:
+    Type: String
+    Default: "no"
+    AllowedValues: [ "yes", "no" ]
+    Description: "Optional: scheduled Athena extract of issue/service data to S3 as CSV or JSON, instead of (or alongside) QuickSight."
+  ExtractFormat:
+    Type: String
+    Default: "CSV"
+    AllowedValues: [ "CSV", "JSON" ]
+    Description: If EnableS3Extract, the output format.
+  ExtractSchedule:
+    Type: String
+    Default: "rate(1 day)"
+    Description: If EnableS3Extract, the EventBridge schedule expression.
 
 Conditions:
   EnableHealthModule: !Equals [ !Ref EnableHealthModule, "yes"]
   EnableCreditModule: !Equals [ !Ref EnableCreditModule, "yes"]
+  EnableIssueDashboards: !Equals [ !Ref EnableIssueDashboards, "yes"]
+  DeployIssueDashboards: !And [ !Condition EnableHealthModule, !Condition EnableIssueDashboards ]
+  EnableS3Extract: !Equals [ !Ref EnableS3Extract, "yes"]
+  DeployS3Extract: !And [ !Condition EnableHealthModule, !Condition EnableS3Extract ]
   EnableHealthEventUrl: !Equals [ !Ref EnableHealthEventUrl, "yes"]
   EnableNotificationModule: !Equals [ !Ref EnableNotificationModule, "yes"]
   Enabletaginfo: !Equals [ !Ref Enabletaginfo, "yes"]
@@ -204,7 +227,7 @@ Resources:
   HealthModuleServiceDataSetSetup:
     Type: AWS::CloudFormation::Stack
     DependsOn: HealthModuleDataSetSetup
-    Condition: EnableHealthModule
+    Condition: DeployIssueDashboards
     Properties:
       TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleServiceDataSetSetup.yaml
       Parameters:
@@ -216,7 +239,7 @@ Resources:
   HealthModuleIssueDataSetSetup:
     Type: AWS::CloudFormation::Stack
     DependsOn: HealthModuleDataSetSetup
-    Condition: EnableHealthModule
+    Condition: DeployIssueDashboards
     Properties:
       TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleIssueDataSetSetup.yaml
       Parameters:
@@ -240,7 +263,7 @@ Resources:
 
   HealthModuleIssueQSAnalysis:
     Type: AWS::CloudFormation::Stack
-    Condition: EnableHealthModule
+    Condition: DeployIssueDashboards
     Properties:
       TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/HealthModule/HealthModuleIssueQSAnalysis.yaml
       Parameters:
@@ -248,3 +271,16 @@ Resources:
         QSDataSetHealthServiceEvent: !GetAtt HealthModuleServiceDataSetSetup.Outputs.QSDataSetHealthServiceEvent
         QuickSightAnalysisAuthor: !Ref QuickSightAnalysisAuthor
         ResourcePrefix: !Ref ResourcePrefix
+
+  OutputS3ExtractSetup:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: HealthModuleDataSetSetup
+    Condition: DeployS3Extract
+    Properties:
+      TemplateURL: !Sub https://${DataCollectionBucket}.s3.amazonaws.com/DataCollection-metadata/OutputModule/S3ExtractModule.yaml
+      Parameters:
+        ResourcePrefix: !Ref ResourcePrefix
+        HeidiDataCollectionDB: !GetAtt DataCollectionModule.Outputs.HeidiDataCollectionDB
+        DataCollectionBucket: !Ref DataCollectionBucket
+        ExtractFormat: !Ref ExtractFormat
+        ExtractSchedule: !Ref ExtractSchedule
