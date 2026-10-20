@@ -1,0 +1,213 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Output Module: scheduled Athena extract of the issue (event-grain) and
+  service-grain datasets to S3 as CSV or JSON. An alternative/complement to the
+  QuickSight datasets for consumers who want raw extracts instead of SPICE
+  dashboards. Reads the awshealthevent Glue table created by
+  HealthModuleDataSetSetup.
+
+Parameters:
+  ResourcePrefix:
+    Type: String
+    Default: "heidi-"
+    Description: Prefix on created resources.
+  HeidiDataCollectionDB:
+    Type: String
+    Default: "datacollectiondb"
+    Description: Athena DataCollection DB (without prefix).
+  DataCollectionBucket:
+    Type: String
+    Description: S3 bucket that holds collected data; extracts and Athena temp output are written here under separate prefixes.
+  ExtractFormat:
+    Type: String
+    Default: "CSV"
+    AllowedValues:
+      - "CSV"
+      - "JSON"
+    Description: Output format for the S3 extract.
+  ExtractSchedule:
+    Type: String
+    Default: "rate(1 day)"
+    Description: EventBridge schedule expression for the extract run.
+
+Resources:
+  S3ExtractRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: s3-extract-access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: Athena
+                Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetWorkGroup
+                Resource: !Sub "arn:${AWS::Partition}:athena:${AWS::Region}:${AWS::AccountId}:workgroup/primary"
+              - Sid: GlueCatalog
+                Effect: Allow
+                Action:
+                  - glue:GetDatabase
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetPartition
+                  - glue:GetPartitions
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:catalog"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:database/${ResourcePrefix}${HeidiDataCollectionDB}"
+                  - !Sub "arn:${AWS::Partition}:glue:${AWS::Region}:${AWS::AccountId}:table/${ResourcePrefix}${HeidiDataCollectionDB}/*"
+              - Sid: LakeFormation
+                Effect: Allow
+                Action: lakeformation:GetDataAccess
+                Resource: "*"
+              - Sid: S3
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::${DataCollectionBucket}"
+                  - !Sub "arn:${AWS::Partition}:s3:::${DataCollectionBucket}/*"
+
+  S3ExtractFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.handler
+      Runtime: python3.12
+      Timeout: 600
+      MemorySize: 256
+      Role: !GetAtt S3ExtractRole.Arn
+      Environment:
+        Variables:
+          DB: !Sub "${ResourcePrefix}${HeidiDataCollectionDB}"
+          OUTPUT_BUCKET: !Ref DataCollectionBucket
+          FORMAT: !Ref ExtractFormat
+          WORKGROUP: primary
+      Code:
+        ZipFile: |
+          import os, time, boto3
+
+          athena = boto3.client('athena')
+          s3 = boto3.client('s3')
+
+          DB = os.environ['DB']
+          BUCKET = os.environ['OUTPUT_BUCKET']
+          FMT = os.environ.get('FORMAT', 'CSV').upper()
+          WG = os.environ.get('WORKGROUP', 'primary')
+          TABLE = '"AwsDataCatalog"."' + DB + '"."awshealthevent"'
+          TMP = 's3://' + BUCKET + '/heidi-extract-tmp/'
+
+          ISSUE_SQL = (
+              "WITH latest AS ("
+              "  SELECT detail.eventarn AS event_arn,"
+              "         COALESCE(detail.affectedAccount, account) AS affected_account,"
+              "         detail.service AS service, detail.eventregion AS region,"
+              "         detail.eventscopecode AS scope, detail.eventtypecode AS event_type_code,"
+              "         detail.statuscode AS raw_status,"
+              "         SUBSTRING(detail.eventdescription[1].latestdescription, 1, 2000) AS description,"
+              "         CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,"
+              "         CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,"
+              "         rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk"
+              "  FROM " + TABLE + " WHERE detail.eventtypecategory = 'issue'"
+              ") SELECT event_arn, affected_account, service, region, scope, event_type_code,"
+              "         start_time, end_time,"
+              "         CASE WHEN end_time IS NULL THEN 'open' ELSE COALESCE(raw_status, 'closed') END AS status,"
+              "         CAST(date_diff('hour', start_time, end_time) AS BIGINT) AS duration_hours, description"
+              "  FROM latest WHERE rk = 1"
+          )
+
+          SERVICE_SQL = (
+              "WITH latest AS ("
+              "  SELECT detail.eventarn AS event_arn,"
+              "         COALESCE(detail.affectedAccount, account) AS affected_account,"
+              "         detail.eventregion AS region, detail.service AS service_raw,"
+              "         detail.eventtypecode AS event_type_code,"
+              "         CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,"
+              "         CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,"
+              "         detail.eventdescription[1].latestdescription AS descr,"
+              "         rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk"
+              "  FROM " + TABLE + " WHERE detail.eventtypecategory = 'issue'"
+              "), parsed AS ("
+              "  SELECT event_arn, affected_account, region, service_raw, event_type_code, start_time, end_time,"
+              "         regexp_extract(descr, 'affected by this event:\\s*([^.]*)', 1) AS affected_blob,"
+              "         regexp_extract(descr, 'now operating normally:\\s*([^.]*)', 1) AS recovered_blob"
+              "  FROM latest WHERE rk = 1)"
+              " SELECT event_arn, affected_account, region, service_raw, event_type_code, start_time, end_time,"
+              "        'affected' AS service_status, trim(regexp_replace(svc, '\\([^)]*\\)', '')) AS service"
+              " FROM parsed CROSS JOIN UNNEST(split(affected_blob, ',')) AS t(svc)"
+              " WHERE affected_blob <> '' AND trim(regexp_replace(svc, '\\([^)]*\\)', '')) <> ''"
+              " UNION ALL"
+              " SELECT event_arn, affected_account, region, service_raw, event_type_code, start_time, end_time,"
+              "        'recovered' AS service_status, trim(regexp_replace(svc, '\\([^)]*\\)', '')) AS service"
+              " FROM parsed CROSS JOIN UNNEST(split(recovered_blob, ',')) AS t(svc)"
+              " WHERE recovered_blob <> '' AND trim(regexp_replace(svc, '\\([^)]*\\)', '')) <> ''"
+              " UNION ALL"
+              " SELECT event_arn, affected_account, region, service_raw, event_type_code, start_time, end_time,"
+              "        'single' AS service_status, service_raw AS service"
+              " FROM parsed WHERE service_raw <> 'MULTIPLE_SERVICES'"
+          )
+
+          def run(query):
+              qid = athena.start_query_execution(
+                  QueryString=query,
+                  QueryExecutionContext={'Database': DB},
+                  WorkGroup=WG,
+                  ResultConfiguration={'OutputLocation': TMP})['QueryExecutionId']
+              while True:
+                  qe = athena.get_query_execution(QueryExecutionId=qid)['QueryExecution']
+                  state = qe['Status']['State']
+                  if state in ('SUCCEEDED', 'FAILED', 'CANCELLED'):
+                      break
+                  time.sleep(2)
+              if state != 'SUCCEEDED':
+                  reason = qe['Status'].get('StateChangeReason', '')
+                  raise Exception('Athena ' + state + ': ' + reason)
+              return qid
+
+          def handler(event, context):
+              ts = str(int(time.time() * 1000))
+              results = {}
+              for name, select in (('issue', ISSUE_SQL), ('service', SERVICE_SQL)):
+                  dest = 's3://' + BUCKET + '/heidi-extracts/' + name + '/run=' + ts + '/'
+                  if FMT == 'JSON':
+                      run("UNLOAD (" + select + ") TO '" + dest + "' WITH (format = 'JSON')")
+                  else:
+                      qid = run(select)
+                      s3.copy_object(
+                          Bucket=BUCKET,
+                          CopySource={'Bucket': BUCKET, 'Key': 'heidi-extract-tmp/' + qid + '.csv'},
+                          Key='heidi-extracts/' + name + '/run=' + ts + '/' + name + '.csv')
+                  results[name] = dest
+              return {'ok': True, 'run': ts, 'format': FMT, 'outputs': results}
+
+  S3ExtractScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: "Scheduled AWS Health issue/service extract to S3"
+      ScheduleExpression: !Ref ExtractSchedule
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt S3ExtractFunction.Arn
+          Id: s3ExtractTarget
+
+  S3ExtractInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt S3ExtractFunction.Arn
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt S3ExtractScheduleRule.Arn
