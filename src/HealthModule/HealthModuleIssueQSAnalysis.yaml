@@ -373,29 +373,43 @@ Resources:
                     Elements:
                       - ElementId: kpi-interruptions
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: kpi-downtime
                         ElementType: VISUAL
+                        ColumnIndex: 12
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: kpi-accounts
                         ElementType: VISUAL
+                        ColumnIndex: 24
                         ColumnSpan: 12
+                        RowIndex: 0
                         RowSpan: 4
                       - ElementId: bar-downtime-service
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 18
+                        RowIndex: 4
                         RowSpan: 8
                       - ElementId: bar-interruptions-region
                         ElementType: VISUAL
+                        ColumnIndex: 18
                         ColumnSpan: 18
+                        RowIndex: 4
                         RowSpan: 8
                       - ElementId: bar-per-service
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 36
+                        RowIndex: 12
                         RowSpan: 8
                       - ElementId: table-detail
                         ElementType: VISUAL
+                        ColumnIndex: 0
                         ColumnSpan: 36
+                        RowIndex: 20
                         RowSpan: 10
