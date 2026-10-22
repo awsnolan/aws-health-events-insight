@@ -53,7 +53,7 @@ Resources:
                   detail.eventscopecode AS scope,
                   detail.eventtypecode AS event_type_code,
                   detail.statuscode AS raw_status,
-                  SUBSTRING(detail.eventdescription[1].latestdescription, 1, 2000) AS description,
+                  SUBSTRING(detail.eventdescription[1].latestdescription, 1, 400) AS description,
                   CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,
                   CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,
                   CAST(date_parse(detail.lastupdatedtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS last_updated_time,
