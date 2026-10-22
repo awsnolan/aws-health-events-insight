@@ -13,15 +13,15 @@ section.
    deliberate reading order (e.g. KPIs, then the three bars grouped, detail table
    last) and set it via the `Layouts` `Elements` order / `ColumnIndex`/`RowIndex`.
 
-2. **Output mode: CSV/JSON to S3 instead of QuickSight.**
-   Add a deployment option to skip the QuickSight datasets/analysis and instead
-   write the issue event-grain and service-grain query results as CSV/JSON to an
-   S3 prefix on a schedule. Rationale: avoid QuickSight/SPICE cost and licensing
-   for consumers who just want raw extracts for their own BI or record-keeping.
-   Approach: a scheduled Lambda running the existing Athena SQL via
-   `StartQueryExecution` → results to S3, gated by a parameter (e.g.
-   `OutputMode: quicksight | s3 | both`). The Athena SQL already exists in the
-   dataset templates — factor it out so both paths share it.
+2. **[DONE] Output mode: CSV/JSON to S3 instead of QuickSight.**
+   Implemented as the `OutputMode` parameter (`s3` | `quicksight` | `both`,
+   default `s3`). `s3` deploys only the scheduled `S3ExtractModule` Lambda and
+   skips every QuickSight resource (datasource, datasets, analyses, and the
+   `AthenaQuicksightAssumeRole`). The core `awshealthevent` Glue table was moved
+   from `HealthModuleDataSetSetup.yaml` into `DataCollectionModule.yaml` so it
+   exists independent of QuickSight — that decoupling is what makes the lean
+   ~16-resource S3-only footprint possible. Replaces the old
+   `EnableIssueDashboards`/`EnableS3Extract` toggles. See FORK-NOTES.md.
 
 3. **Relabel panels — neutral vocabulary.**
    Remove presumptive/loaded terms: avoid "credit" (don't presuppose a credit

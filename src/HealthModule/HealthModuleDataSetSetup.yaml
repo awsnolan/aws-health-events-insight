@@ -3,9 +3,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: Health Module QS DataSet Setup
 
 Parameters:
-  DataCollectionBucket:
-    Type: String
-    Description: Name of the S3 Bucket to be created to hold data information
   QuickSightAnalysisAuthor:
     Type: String
     Description: The QuickSight analysis author Arn that is allowed configure and manage the QS Analyses and dashboards. e.g. arn:aws:quicksight:<Region>:<AccountID>:user/default/<username>
@@ -27,76 +24,9 @@ Outputs:
     Export:
       Name: !Sub ${ResourcePrefix}QSDataSetHealthEvent
 
-Resources:  
-  GlueHealthTable:
-  # AWS Glue Table resource representing  AWS Health External Table
-    Type: AWS::Glue::Table
-    Properties:
-      # Reference to the AWS Glue Database
-      DatabaseName: !Sub ${ResourcePrefix}${HeidiDataCollectionDB}
-      CatalogId: !Sub '${AWS::AccountId}'
-      TableInput:
-        Name: awshealthevent
-        Description: 'AWS Health Events Data'
-        Owner: GlueTeam
-        PartitionKeys:
-          - Name: date_created
-            Type: string
-          - Name: source_partition 
-            Type: string
-        Parameters:
-          EXTERNAL: 'TRUE'  # 'EXTERNAL' should be a string
-          projection.enabled: 'true'
-          projection.date_created.type: 'date'
-          projection.date_created.format: 'yyyy/MM/dd'
-          projection.date_created.interval: '1'
-          projection.date_created.interval.unit: 'DAYS'
-          projection.date_created.range: '2021/01/01,NOW'
-          projection.source_partition.type: 'enum'
-          projection.source_partition.values: 'heidi.health,aws.health,awshealthtest'
-          storage.location.template: !Join ['', ['s3://', !Ref DataCollectionBucket, '/DataCollection-data/${source_partition}/${date_created}/']]
-        StorageDescriptor:
-          # Columns and their data types for the table
-          Columns:
-            - Name: version
-              Type: string
-              Comment: 'from deserializer'
-            - Name: id
-              Type: string
-              Comment: 'from deserializer'
-            - Name: detail-type
-              Type: string
-              Comment: 'from deserializer'
-            - Name: source
-              Type: string
-              Comment: 'from deserializer'
-            - Name: account
-              Type: string
-              Comment: 'from deserializer'
-            - Name: time
-              Type: string
-              Comment: 'from deserializer'
-            - Name: region
-              Type: string
-              Comment: 'from deserializer'
-            - Name: resources
-              Type: array<string>
-              Comment: 'from deserializer'
-            - Name: detail
-              Type: struct<eventarn:string,affectedAccount:string,service:string,eventscopecode:string,communicationid:string,lastupdatedtime:string,eventregion:string,eventtypecode:string,eventtypecategory:string,statusCode:string,starttime:string,endtime:string,eventdescription:array<struct<language:string,latestdescription:string>>,eventMetadata:string,affectedentities:array<struct<entityvalue:string,status:string,entityarn:string,entityaz:string,entitytags:array<struct<value:string,key:string>>>>>
-              Comment: 'from deserializer'
-          # S3 location of the data for the Athena External Table
-          Location: !Sub 's3://${DataCollectionBucket}/DataCollection-data'
-          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
-          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-          SerdeInfo:
-            SerializationLibrary: 'org.openx.data.jsonserde.JsonSerDe'
-            Parameters:
-              paths: 'account,detail,detail-type,id,region,resources,source,time,version'
-          Compressed: false
-        TableType: EXTERNAL_TABLE
-        Retention: 30
-
+Resources:
+  # NOTE: the awshealthevent Glue table was moved to DataCollectionModule.yaml so
+  # it exists for S3-only deployments too. This stack only runs when QuickSight is on.
   QSDataSetHealthEvent:
   # Create an AWS QuickSight DataSet for AWS Health events
       Type: AWS::QuickSight::DataSet

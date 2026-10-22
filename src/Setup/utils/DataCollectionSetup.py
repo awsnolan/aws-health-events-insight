@@ -182,6 +182,19 @@ def deploy_stack(command):
     except Exception as e:
         print("An error occurred:", e)
 
+def ask_output_mode():
+    # How collected data is surfaced. S3-only is the lean default (no QuickSight).
+    print("Select output mode:")
+    print("  s3        - scheduled Athena extract to S3 as CSV/JSON only (no QuickSight) [default]")
+    print("  quicksight- QuickSight datasets and SLA/issue analyses only")
+    print("  both      - S3 extract plus QuickSight")
+    choice = (input("Enter output mode [s3]: ") or "s3").strip().lower()
+    if choice not in ("s3", "quicksight", "both"):
+        print(f"'{choice}' is not valid; using 's3'.")
+        choice = "s3"
+    return choice
+
+
 #User Input Data
 def get_user_input():
     SlackChannelId = "na"
@@ -203,11 +216,14 @@ def get_user_input():
     ResourcePrefix = ResourcePrefix.lower()
     print_boxed_text("Module Selection")
     EnableHealthModule = ask_yes_no("Do you want to enable the AWS Health Module(HEIDI)?")
+    OutputMode = "s3"
     if EnableHealthModule:
-        qsregion = input(f"Enter QuickSight Identity Region, Hit enter to use default {region}: ") or region
-        QuickSightAnalysisAuthor = get_quicksight_user(account_id, qsregion)
+        OutputMode = ask_output_mode()
         AthenaResultBucket = input("Enter AthenaResultBucket, Hit enter to use default (aws-athena-query-results-*): ") or "aws-athena-query-results-*"
         AthenaBucketKmsArn = input("Enter AthenaBucketKmsArn, Hit enter to use default (na): ") or "na"
+        if OutputMode in ("quicksight", "both"):
+            qsregion = input(f"Enter QuickSight Identity Region, Hit enter to use default {region}: ") or region
+            QuickSightAnalysisAuthor = get_quicksight_user(account_id, qsregion)
     print()
     EnableNotificationModule = ask_yes_no("Do you want to enable the Notification Module?")
     if EnableNotificationModule:
@@ -233,12 +249,14 @@ def get_user_input():
         DataCollectionBucket, DataCollectionBucketKmsArn, QuickSightAnalysisAuthor,
         AthenaResultBucket, AthenaBucketKmsArn,ResourcePrefix, 
         SlackChannelId, SlackWorkspaceId, TeamId, TeamsTenantId, TeamsChannelId, qsregion, #qs region not required in parameter
-        MemberRegionHealth
+        MemberRegionHealth,
+        OutputMode
     )
 
-def save_variables_to_file(variables): #last variable is variables[20], increment from here and also update this comment.
+def save_variables_to_file(variables): #last variable is variables[18], increment from here and also update this comment.
     output = "\n".join([
         f"#Deploy AWS Health Events Intelligence Dashboards and Insights (HEIDI)\nEnableHealthModule: {variables[0]}\n",
+        f"#Output mode: s3 (default, no QuickSight) | quicksight | both\nOutputMode: {variables[18]}\n",
         f"#Deploy Notification module\nEnableNotificationModule: {variables[1]}\n",
         f"#Data Collection Region\nDataCollectionRegion: {variables[2]}\n",
         f"#Data Collection Account\nDataCollectionAccountID: {variables[3]}\n",
@@ -278,6 +296,7 @@ def read_parameters(file_path):
 
     # Access the variables
     enable_health_module = parameters.get('EnableHealthModule', '')
+    output_mode = parameters.get('OutputMode', 's3')
     enable_notification_module = parameters.get('EnableNotificationModule', '')
     data_collection_region = parameters.get('DataCollectionRegion', '')
     data_collection_account_id = parameters.get('DataCollectionAccountID', '')
@@ -298,6 +317,7 @@ def read_parameters(file_path):
     # Return the variables as a dictionary
     return {
         'EnableHealthModule': enable_health_module,
+        'OutputMode': output_mode,
         'EnableNotificationModule': enable_notification_module,
         'DataCollectionRegion': data_collection_region,
         'DataCollectionAccountID': data_collection_account_id,
@@ -356,6 +376,7 @@ def setup():
                 f"TeamsTenantId={parameters_dict['TeamsTenantId']} " \
                 f"TeamsChannelId={parameters_dict['TeamsChannelId']} " \
                 f"EnableHealthModule={parameters_dict['EnableHealthModule']} " \
+                f"OutputMode={parameters_dict['OutputMode']} " \
                 f"EnableNotificationModule={parameters_dict['EnableNotificationModule']} " 
     
     #Update tags here

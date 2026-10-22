@@ -36,10 +36,18 @@ Parameters:
     AllowedValues:
       - "yes"
       - "no"
+  OutputMode:
+    Type: String
+    Default: "s3"
+    AllowedValues: [ "quicksight", "s3", "both" ]
+    Description: >-
+      How collected data is surfaced. "s3" (default) deploys only the scheduled
+      S3 extract and skips all QuickSight resources. "quicksight" deploys the
+      QuickSight datasource/datasets/analyses. "both" deploys everything.
 
 Outputs:
   HeidiQSDataSourceArn:
-    Condition: DeployDataCollectionComponents
+    Condition: DeployQuickSight
     Value: !GetAtt HeidiQSDataSource.Arn
     Export:
       Name: !Sub ${ResourcePrefix}QSDataSourceArn     
@@ -53,6 +61,11 @@ Conditions:
   DataCollectionBucketKmsArn: !Not [!Equals [!Ref DataCollectionBucketKmsArn, "na"]]
   AthenaBucketKmsArn: !Not [!Equals [!Ref AthenaBucketKmsArn, "na"]]
   DeployDataCollectionComponents: !Equals [ !Ref EnableHealthModule, "yes"]
+  # QuickSight datasource + Athena/QuickSight assume-role only when an operator
+  # actually wants dashboards. S3-only deployments skip these entirely.
+  DeployQuickSight: !And
+    - !Condition DeployDataCollectionComponents
+    - !Or [ !Equals [ !Ref OutputMode, "quicksight" ], !Equals [ !Ref OutputMode, "both" ] ]
 
 Resources:
   # Define an IAM Role for the Kinesis Firehose delivery stream
@@ -227,7 +240,7 @@ Resources:
 
 # Create an AWS IAM Managed Policy for QuickSight service role with necessary permissions
   AthenaQuicksightAssumeRole:
-    Condition: DeployDataCollectionComponents
+    Condition: DeployQuickSight
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -353,7 +366,7 @@ Resources:
 
 # Create an AWS QuickSight DataSource for DataCollection
   HeidiQSDataSource:
-    Condition: DeployDataCollectionComponents
+    Condition: DeployQuickSight
     Type: AWS::QuickSight::DataSource
     Properties:
       DataSourceId: !Sub "${ResourcePrefix}DataSource-${AWS::AccountId}"
@@ -472,3 +485,71 @@ Resources:
             Compressed: false
           TableType: EXTERNAL_TABLE
           Retention: 30
+
+# Core AWS Health events table. Lives here (not in the QuickSight dataset stack)
+# so it exists for every output mode — both the S3 extract and QuickSight read it.
+  GlueHealthTable:
+    Condition: DeployDataCollectionComponents
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref AthenaDataCollectionDB
+      CatalogId: !Sub '${AWS::AccountId}'
+      TableInput:
+        Name: awshealthevent
+        Description: 'AWS Health Events Data'
+        Owner: GlueTeam
+        PartitionKeys:
+          - Name: date_created
+            Type: string
+          - Name: source_partition
+            Type: string
+        Parameters:
+          EXTERNAL: 'TRUE'
+          projection.enabled: 'true'
+          projection.date_created.type: 'date'
+          projection.date_created.format: 'yyyy/MM/dd'
+          projection.date_created.interval: '1'
+          projection.date_created.interval.unit: 'DAYS'
+          projection.date_created.range: '2021/01/01,NOW'
+          projection.source_partition.type: 'enum'
+          projection.source_partition.values: 'heidi.health,aws.health,awshealthtest'
+          storage.location.template: !Join ['', ['s3://', !Ref DataCollectionBucket, '/DataCollection-data/${source_partition}/${date_created}/']]
+        StorageDescriptor:
+          Columns:
+            - Name: version
+              Type: string
+              Comment: 'from deserializer'
+            - Name: id
+              Type: string
+              Comment: 'from deserializer'
+            - Name: detail-type
+              Type: string
+              Comment: 'from deserializer'
+            - Name: source
+              Type: string
+              Comment: 'from deserializer'
+            - Name: account
+              Type: string
+              Comment: 'from deserializer'
+            - Name: time
+              Type: string
+              Comment: 'from deserializer'
+            - Name: region
+              Type: string
+              Comment: 'from deserializer'
+            - Name: resources
+              Type: array<string>
+              Comment: 'from deserializer'
+            - Name: detail
+              Type: struct<eventarn:string,affectedAccount:string,service:string,eventscopecode:string,communicationid:string,lastupdatedtime:string,eventregion:string,eventtypecode:string,eventtypecategory:string,statusCode:string,starttime:string,endtime:string,eventdescription:array<struct<language:string,latestdescription:string>>,eventMetadata:string,affectedentities:array<struct<entityvalue:string,status:string,entityarn:string,entityaz:string,entitytags:array<struct<value:string,key:string>>>>>
+              Comment: 'from deserializer'
+          Location: !Sub 's3://${DataCollectionBucket}/DataCollection-data'
+          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
+          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+          SerdeInfo:
+            SerializationLibrary: 'org.openx.data.jsonserde.JsonSerDe'
+            Parameters:
+              paths: 'account,detail,detail-type,id,region,resources,source,time,version'
+          Compressed: false
+        TableType: EXTERNAL_TABLE
+        Retention: 30

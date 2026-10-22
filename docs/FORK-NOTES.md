@@ -187,13 +187,27 @@ specifics) during the first deploy.
   `s3://<DataCollectionBucket>/heidi-extracts/<dataset>/run=<ts>/`. CSV uses a
   plain Athena query result copied to the prefix; JSON uses `UNLOAD`. Reads via
   IAM (covered by the existing `IAM_ALLOWED_PRINCIPALS` grant).
-- **`HeidiRoot.yaml`** toggles:
-  - `EnableIssueDashboards` (default `yes`) — the issue/service datasets and
-    analysis. Set `no` to skip the SPICE/analysis cost.
-  - `EnableS3Extract` (default `no`), `ExtractFormat` (CSV|JSON),
-    `ExtractSchedule`. For S3-only output: `EnableIssueDashboards=no` +
-    `EnableS3Extract=yes`. The base Glue table (from `HealthModuleDataSetSetup`)
-    always deploys, since the extract queries it.
+- **`HeidiRoot.yaml` `OutputMode`** (single switch, default `s3`):
+  - `s3` (default) — deploys only the scheduled S3 extract. No QuickSight
+    datasource, datasets, or analyses are created, and the QuickSight-only
+    `AthenaQuicksightAssumeRole` is skipped. This is the lean ~16-resource
+    footprint and the mode the operator will normally use. `QuickSightAnalysisAuthor`
+    is not required (defaults to `na`).
+  - `quicksight` — deploys the QuickSight datasets and SLA/issue analyses, no
+    S3 extract.
+  - `both` — everything.
+  - `ExtractFormat` (CSV|JSON) and `ExtractSchedule` apply whenever `s3`/`both`.
+  - This replaces the old `EnableIssueDashboards` / `EnableS3Extract` pair.
+- **Glue table decoupling**: the core `awshealthevent` Glue table now lives in
+  `DataCollectionModule.yaml` (alongside `accountsinfo`/`taginfo`), not in
+  `HealthModuleDataSetSetup.yaml`. That is what lets the S3 extract run with zero
+  QuickSight resources — the extract and QuickSight both read the same table, but
+  the table no longer depends on the QuickSight dataset stack.
+- **Lake Formation note for S3-only mode**: the extract Lambda role
+  (`S3ExtractRole`) reads the Glue DB/tables via Athena. In LF-only accounts it
+  needs LF data access the same way QuickSight did. The current working
+  workaround is the `IAM_ALLOWED_PRINCIPALS ALL` grant on the DB and each table
+  (see the LF section above); grants-as-code is still backlog.
 
 Not yet deploy-validated: the extract Lambda + Athena `UNLOAD`/CSV paths only
 prove out on a scheduled run. Trigger the Lambda manually after deploy to verify.

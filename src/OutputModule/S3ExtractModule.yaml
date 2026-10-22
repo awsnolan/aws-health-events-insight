@@ -5,7 +5,7 @@ Description: >-
   service-grain datasets to S3 as CSV or JSON. An alternative/complement to the
   QuickSight datasets for consumers who want raw extracts instead of SPICE
   dashboards. Reads the awshealthevent Glue table created by
-  HealthModuleDataSetSetup.
+  DataCollectionModule (so it works with no QuickSight deployed).
 
 Parameters:
   ResourcePrefix:
