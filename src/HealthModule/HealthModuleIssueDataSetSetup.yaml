@@ -53,7 +53,7 @@ Resources:
                   detail.eventscopecode AS scope,
                   detail.eventtypecode AS event_type_code,
                   detail.statuscode AS raw_status,
-                  SUBSTRING(detail.eventdescription[1].latestdescription, 1, 400) AS description,
+                  substr(regexp_replace(regexp_replace(detail.eventdescription[1].latestdescription, '<[^>]+>', ''), '\s+', ' '), 1, 250) AS event_summary,
                   CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,
                   CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,
                   CAST(date_parse(detail.lastupdatedtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS last_updated_time,
@@ -73,7 +73,7 @@ Resources:
                 last_updated_time,
                 CASE WHEN end_time IS NULL THEN 'open' ELSE COALESCE(raw_status, 'closed') END AS status,
                 CAST(date_diff('hour', start_time, end_time) AS BIGINT) AS duration_hours,
-                description
+                event_summary
               FROM latest
               WHERE rk = 1
             Columns:
@@ -99,7 +99,7 @@ Resources:
                 Type: STRING
               - Name: duration_hours
                 Type: INTEGER
-              - Name: description
+              - Name: event_summary
                 Type: STRING
       LogicalTableMap:
         "AWSHealthIssueLT":
@@ -118,7 +118,7 @@ Resources:
                   - last_updated_time
                   - status
                   - duration_hours
-                  - description
+                  - event_summary
           Source:
             PhysicalTableId: "AWSHealthIssuePT"
       Permissions:
