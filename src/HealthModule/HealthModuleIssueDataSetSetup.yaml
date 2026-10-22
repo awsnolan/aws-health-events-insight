@@ -72,7 +72,7 @@ Resources:
                 end_time,
                 last_updated_time,
                 CASE WHEN end_time IS NULL THEN 'open' ELSE COALESCE(raw_status, 'closed') END AS status,
-                CAST(date_diff('hour', start_time, end_time) AS BIGINT) AS duration_hours,
+                round(date_diff('second', start_time, end_time) / 3600.0, 2) AS duration_hours,
                 event_summary
               FROM latest
               WHERE rk = 1
@@ -98,7 +98,7 @@ Resources:
               - Name: status
                 Type: STRING
               - Name: duration_hours
-                Type: INTEGER
+                Type: DECIMAL
               - Name: event_summary
                 Type: STRING
       LogicalTableMap:
