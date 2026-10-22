@@ -366,6 +366,8 @@ Resources:
                             Column: { DataSetIdentifier: "IssueDS", ColumnName: duration_hours }
                           - FieldId: t.status
                             Column: { DataSetIdentifier: "IssueDS", ColumnName: status }
+                          - FieldId: t.description
+                            Column: { DataSetIdentifier: "IssueDS", ColumnName: description }
                   Actions: []
             Layouts:
               - Configuration:
