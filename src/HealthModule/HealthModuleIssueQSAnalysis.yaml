@@ -165,7 +165,7 @@ Resources:
                     Computations:
                       - TotalAggregation:
                           ComputationId: comp-interruptions
-                          Name: Service events
+                          Name: ServiceEvents
                           Value:
                             CategoricalMeasureField:
                               FieldId: issue.eventarn.dc
@@ -178,7 +178,7 @@ Resources:
                         <narrative>
                           <block align="center"><inline font-size="22.4px">Service events</inline></block>
                           <br/>
-                          <block align="center"><inline font-size="22.4px"><expression>Service events.totalAggregate.formattedValue</expression></inline></block>
+                          <block align="center"><inline font-size="22.4px"><expression>ServiceEvents.totalAggregate.formattedValue</expression></inline></block>
                         </narrative>
                   Actions: []
               - InsightVisual:
@@ -403,15 +403,15 @@ Resources:
                         ColumnSpan: 18
                         RowIndex: 4
                         RowSpan: 8
-                      - ElementId: bar-per-service
-                        ElementType: VISUAL
-                        ColumnIndex: 0
-                        ColumnSpan: 36
-                        RowIndex: 12
-                        RowSpan: 8
                       - ElementId: table-detail
                         ElementType: VISUAL
                         ColumnIndex: 0
                         ColumnSpan: 36
-                        RowIndex: 20
+                        RowIndex: 12
                         RowSpan: 10
+                      - ElementId: bar-per-service
+                        ElementType: VISUAL
+                        ColumnIndex: 0
+                        ColumnSpan: 36
+                        RowIndex: 22
+                        RowSpan: 8
