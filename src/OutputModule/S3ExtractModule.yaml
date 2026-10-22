@@ -188,10 +188,11 @@ Resources:
                       run("UNLOAD (" + select + ") TO '" + dest + "' WITH (format = 'JSON')")
                   else:
                       qid = run(select)
-                      s3.copy_object(
-                          Bucket=BUCKET,
-                          CopySource={'Bucket': BUCKET, 'Key': 'heidi-extract-tmp/' + qid + '.csv'},
-                          Key='heidi-extracts/' + name + '/run=' + ts + '/' + name + '.csv')
+                      src = {'Bucket': BUCKET, 'Key': 'heidi-extract-tmp/' + qid + '.csv'}
+                      s3.copy_object(Bucket=BUCKET, CopySource=src,
+                                     Key='heidi-extracts/' + name + '/run=' + ts + '/' + name + '.csv')
+                      s3.copy_object(Bucket=BUCKET, CopySource=src,
+                                     Key='heidi-extracts/' + name + '/latest/' + name + '.csv')
                   results[name] = dest
               return {'ok': True, 'run': ts, 'format': FMT, 'outputs': results}
 
