@@ -7,8 +7,8 @@ import os
 # Get Tag
 def tag():
     # Get the default AWS region from the current session
-    tag_key = input("Enter the key to tag the stack (Hit enter to use default: 'App'): ") or "App"
-    tag_value = input(f"Enter the value for '{tag_key}' (Hit enter to use default: 'Heidi'): ") or "Heidi"
+    tag_key = input("Enter the key to tag the stack (Hit enter to use default: 'Application'): ") or "Application"
+    tag_value = input(f"Enter the value for '{tag_key}' (Hit enter to use default: 'HEIDI'): ") or "HEIDI"
     return tag_key, tag_value
 
 
