@@ -209,5 +209,12 @@ specifics) during the first deploy.
   workaround is the `IAM_ALLOWED_PRINCIPALS ALL` grant on the DB and each table
   (see the LF section above); grants-as-code is still backlog.
 
-Not yet deploy-validated: the extract Lambda + Athena `UNLOAD`/CSV paths only
-prove out on a scheduled run. Trigger the Lambda manually after deploy to verify.
+Deploy-validated: the extract Lambda was invoked in `OutputMode=s3` and wrote
+both `issue.csv` and `service.csv` to `heidi-extracts/<dataset>/{latest,run=<ts>}/`.
+One gotcha surfaced — after the `awshealthevent` table is recreated (e.g. the
+two-phase migration that moved it into `DataCollectionModule.yaml`, or any
+output-mode switch that drops/recreates it), the new table has **no Lake
+Formation grant**, so Athena returns `TABLE_NOT_FOUND` until the
+`IAM_ALLOWED_PRINCIPALS` grant is re-applied to it (see the LF section). This
+makes the LF-grants-as-code backlog item effectively required for S3-only
+redeploys, not optional.

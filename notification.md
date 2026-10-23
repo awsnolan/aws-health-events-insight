@@ -2,8 +2,6 @@
 
 Heidi can send incoming event notification to slack/teams/chime. AWS Chatbot is an AWS service that enables DevOps and software development teams to use messaging program chat rooms to monitor and respond to operational events in their AWS Cloud. AWS Chatbot processes AWS service notifications from Amazon Simple Notification Service (Amazon SNS), and forwards them to chat rooms so teams can analyze and act on them immediately, regardless of location.
 
- ![ALT](img/HeidiWithNotificationOption.png)
-
 # Slack Notification Setup
 
 Heidi will setup all required resources through cloudformation template. If this is first time setup, Slack Workspace setup/OAuth authorization must be done from AWS console.

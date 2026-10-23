@@ -2109,7 +2109,7 @@ Resources:
           - SheetTextBoxId: 1db07a42-e3cf-429b-ad5f-1c9f1c7feefd
             Content: |-
               <text-box>
-                <a href="https://github.com/aws-samples/aws-health-events-insight" target="_blank">https://github.com/aws-samples/aws-health-events-insight</a>
+                <a href="https://github.com/awsnolan/aws-health-events-insight" target="_blank">https://github.com/awsnolan/aws-health-events-insight</a>
               </text-box>
           Layouts:
           - Configuration:
