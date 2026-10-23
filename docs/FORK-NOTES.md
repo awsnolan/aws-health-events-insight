@@ -78,11 +78,18 @@ done
 
 **Codified as of this fork:** deploy with `LakeFormationGoverned=yes` and these
 grants are created automatically by `AWS::LakeFormation::PrincipalPermissions`
-resources in `DataCollectionModule.yaml` (DB `DESCRIBE`, each table
-`SELECT`+`DESCRIBE`, principal `IAM_ALLOWED_PRINCIPALS`). The manual commands
+resources in `DataCollectionModule.yaml` — `ALL` (Super) to
+`IAM_ALLOWED_PRINCIPALS` on the database and each table. The manual commands
 below remain useful for retrofitting an existing deploy or for a table that was
 recreated out of band. The deploying principal must still be an LF data-lake
 admin to create the database.
+
+> **Why `ALL` and not a least-privilege `SELECT`+`DESCRIBE`?** Validated the
+> hard way: granting only `SELECT`+`DESCRIBE` to `IAM_ALLOWED_PRINCIPALS` leaves
+> Lake Formation actively enforcing column-level access, and Athena then fails
+> with `COLUMN_NOT_FOUND: Column 'detail'...` on the struct columns. Only `ALL`
+> (Super) makes LF defer to IAM for the resource, which is the behaviour the
+> stack needs. Least-privilege for this principal is a trap here.
 
 Granting to `IAM_ALLOWED_PRINCIPALS` relaxes Lake Formation governance on
 this database back to IAM control. That is acceptable for a sandbox/test, but in

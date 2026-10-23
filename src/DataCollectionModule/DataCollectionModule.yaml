@@ -583,8 +583,11 @@ Resources:
         Database:
           CatalogId: !Sub '${AWS::AccountId}'
           Name: !Ref AthenaDataCollectionDB
+      # ALL (Super) to IAM_ALLOWED_PRINCIPALS is what makes Lake Formation defer
+      # to IAM for this resource. A partial grant (DESCRIBE/SELECT) leaves LF
+      # enforcing column-level access and breaks the struct columns the SQL reads.
       Permissions:
-        - DESCRIBE
+        - ALL
       PermissionsWithGrantOption: []
 
   LFGrantTableHealth:
@@ -600,8 +603,7 @@ Resources:
           DatabaseName: !Ref AthenaDataCollectionDB
           Name: awshealthevent
       Permissions:
-        - SELECT
-        - DESCRIBE
+        - ALL
       PermissionsWithGrantOption: []
 
   LFGrantTableAccountsInfo:
@@ -617,8 +619,7 @@ Resources:
           DatabaseName: !Ref AthenaDataCollectionDB
           Name: accountsinfo
       Permissions:
-        - SELECT
-        - DESCRIBE
+        - ALL
       PermissionsWithGrantOption: []
 
   LFGrantTableTaginfo:
@@ -634,6 +635,5 @@ Resources:
           DatabaseName: !Ref AthenaDataCollectionDB
           Name: taginfo
       Permissions:
-        - SELECT
-        - DESCRIBE
+        - ALL
       PermissionsWithGrantOption: []
