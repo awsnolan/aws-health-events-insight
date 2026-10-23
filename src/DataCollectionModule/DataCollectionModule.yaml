@@ -44,6 +44,14 @@ Parameters:
       How collected data is surfaced. "s3" (default) deploys only the scheduled
       S3 extract and skips all QuickSight resources. "quicksight" deploys the
       QuickSight datasource/datasets/analyses. "both" deploys everything.
+  LakeFormationGoverned:
+    Type: String
+    Default: "no"
+    AllowedValues: [ "yes", "no" ]
+    Description: >-
+      Set "yes" when the account's Glue Data Catalog is governed by Lake
+      Formation (LF-only mode) to create LF grants on the Heidi database and
+      tables. Leave "no" for IAM-only catalogs (default).
 
 Outputs:
   HeidiQSDataSourceArn:
@@ -66,6 +74,10 @@ Conditions:
   DeployQuickSight: !And
     - !Condition DeployDataCollectionComponents
     - !Or [ !Equals [ !Ref OutputMode, "quicksight" ], !Equals [ !Ref OutputMode, "both" ] ]
+  # Lake Formation grants only in LF-governed accounts (opt-in).
+  DeployLFGrants: !And
+    - !Condition DeployDataCollectionComponents
+    - !Equals [ !Ref LakeFormationGoverned, "yes" ]
 
 Resources:
   # Define an IAM Role for the Kinesis Firehose delivery stream
@@ -553,3 +565,75 @@ Resources:
           Compressed: false
         TableType: EXTERNAL_TABLE
         Retention: 30
+
+# --- Lake Formation grants (opt-in via LakeFormationGoverned=yes) ---
+# In LF-only accounts, Athena/QuickSight/the S3 extract Lambda cannot read the
+# catalog without explicit LF permissions, even with IAM allow. These grants
+# restore IAM-based access on the Heidi database and tables by granting the
+# IAM_ALLOWED_PRINCIPALS group (the proven-reliable approach for this stack).
+# Wildcards are not permitted for IAM_ALLOWED_PRINCIPALS, so each table is
+# granted individually. The deploying principal must be an LF data-lake admin.
+  LFGrantDatabase:
+    Condition: DeployLFGrants
+    Type: AWS::LakeFormation::PrincipalPermissions
+    Properties:
+      Principal:
+        DataLakePrincipalIdentifier: IAM_ALLOWED_PRINCIPALS
+      Resource:
+        Database:
+          CatalogId: !Sub '${AWS::AccountId}'
+          Name: !Ref AthenaDataCollectionDB
+      Permissions:
+        - DESCRIBE
+      PermissionsWithGrantOption: []
+
+  LFGrantTableHealth:
+    Condition: DeployLFGrants
+    Type: AWS::LakeFormation::PrincipalPermissions
+    DependsOn: GlueHealthTable
+    Properties:
+      Principal:
+        DataLakePrincipalIdentifier: IAM_ALLOWED_PRINCIPALS
+      Resource:
+        Table:
+          CatalogId: !Sub '${AWS::AccountId}'
+          DatabaseName: !Ref AthenaDataCollectionDB
+          Name: awshealthevent
+      Permissions:
+        - SELECT
+        - DESCRIBE
+      PermissionsWithGrantOption: []
+
+  LFGrantTableAccountsInfo:
+    Condition: DeployLFGrants
+    Type: AWS::LakeFormation::PrincipalPermissions
+    DependsOn: GlueTableAccountMap
+    Properties:
+      Principal:
+        DataLakePrincipalIdentifier: IAM_ALLOWED_PRINCIPALS
+      Resource:
+        Table:
+          CatalogId: !Sub '${AWS::AccountId}'
+          DatabaseName: !Ref AthenaDataCollectionDB
+          Name: accountsinfo
+      Permissions:
+        - SELECT
+        - DESCRIBE
+      PermissionsWithGrantOption: []
+
+  LFGrantTableTaginfo:
+    Condition: DeployLFGrants
+    Type: AWS::LakeFormation::PrincipalPermissions
+    DependsOn: GlueTableTaginfo
+    Properties:
+      Principal:
+        DataLakePrincipalIdentifier: IAM_ALLOWED_PRINCIPALS
+      Resource:
+        Table:
+          CatalogId: !Sub '${AWS::AccountId}'
+          DatabaseName: !Ref AthenaDataCollectionDB
+          Name: taginfo
+      Permissions:
+        - SELECT
+        - DESCRIBE
+      PermissionsWithGrantOption: []

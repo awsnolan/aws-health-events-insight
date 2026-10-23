@@ -76,7 +76,15 @@ for T in $(aws glue get-tables --region <REGION> --database-name <DB> \
 done
 ```
 
-Granting `ALL` to `IAM_ALLOWED_PRINCIPALS` relaxes Lake Formation governance on
+**Codified as of this fork:** deploy with `LakeFormationGoverned=yes` and these
+grants are created automatically by `AWS::LakeFormation::PrincipalPermissions`
+resources in `DataCollectionModule.yaml` (DB `DESCRIBE`, each table
+`SELECT`+`DESCRIBE`, principal `IAM_ALLOWED_PRINCIPALS`). The manual commands
+below remain useful for retrofitting an existing deploy or for a table that was
+recreated out of band. The deploying principal must still be an LF data-lake
+admin to create the database.
+
+Granting to `IAM_ALLOWED_PRINCIPALS` relaxes Lake Formation governance on
 this database back to IAM control. That is acceptable for a sandbox/test, but in
 a governed production account prefer explicit named-principal grants
 (`DESCRIBE` on the database, `SELECT` on the tables) to the QuickSight Athena
@@ -198,6 +206,12 @@ specifics) during the first deploy.
   - `both` — everything.
   - `ExtractFormat` (CSV|JSON) and `ExtractSchedule` apply whenever `s3`/`both`.
   - This replaces the old `EnableIssueDashboards` / `EnableS3Extract` pair.
+- **Lambda runtimes** standardized to `python3.14` across all templates (was a
+  mix of 3.11/3.12/3.14). Confirm `python3.14` is an available Lambda managed
+  runtime in your target region before deploying.
+- **`LakeFormationGoverned` parameter** (default `no`): set `yes` in LF-only
+  accounts to auto-create the LF grants (DB + tables, `IAM_ALLOWED_PRINCIPALS`)
+  as `AWS::LakeFormation::PrincipalPermissions` resources — no manual grant step.
 - **Glue table decoupling**: the core `awshealthevent` Glue table now lives in
   `DataCollectionModule.yaml` (alongside `accountsinfo`/`taginfo`), not in
   `HealthModuleDataSetSetup.yaml`. That is what lets the S3 extract run with zero

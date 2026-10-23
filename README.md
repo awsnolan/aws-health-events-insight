@@ -233,7 +233,7 @@ This implies that you are using Athena V2. Please upgrade worker to Athena V3. A
 
 #### ***3. Insufficient Lake Formation permission(s) / Athena reports TABLE_NOT_FOUND***
 
-If the account's Glue Data Catalog is governed by Lake Formation, deploys and queries need explicit LF grants. In LF-only accounts, the reliable fix observed in this fork was granting `IAM_ALLOWED_PRINCIPALS` on the database **and each table** (named/SAML grants did not take effect). 
+If the account's Glue Data Catalog is governed by Lake Formation, deploys and queries need explicit LF grants. Deploy with **`LakeFormationGoverned=yes`** to create these grants automatically (`AWS::LakeFormation::PrincipalPermissions` on the database and each table, granting `IAM_ALLOWED_PRINCIPALS`). The deploying principal must still be a Lake Formation data-lake admin to create the database. In LF-only accounts, the reliable fix observed in this fork was granting `IAM_ALLOWED_PRINCIPALS` on the database **and each table** (named/SAML grants did not take effect). 
 
 Note for S3 mode: because the `awshealthevent` table is recreated if it is ever dropped (e.g. switching output modes), a recreated table **loses its LF grant**, and Athena then reports `TABLE_NOT_FOUND` even though the table exists in Glue. Re-apply the grant after any redeploy that recreates the table. Full commands and the recommended production approach are in the Lake Formation section of [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
 

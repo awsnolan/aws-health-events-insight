@@ -92,18 +92,22 @@ section.
   `print(event_data)`.
 - Three overlapping backfill implementations and three tag-enrichment
   implementations — consolidate and point the README at the better ones.
-- Inconsistent Lambda runtime pins (`python3.14` in `OrgHealthEventBackFill.Yaml`
-  vs `python3.11` elsewhere); standardize on a supported runtime and verify it
-  exists in target regions.
+- **[DONE]** Lambda runtime pins standardized to `python3.14` across all
+  templates (was a mix of 3.11/3.12/3.14). Verify `python3.14` is an available
+  Lambda managed runtime in the target region before deploying.
 
 ### Deployment / Lake Formation
 - **Named-principal LF grants did not take effect** in the LF-only account; only
   `IAM_ALLOWED_PRINCIPALS` restored access (which relaxes LF governance on the
   DB). Investigate the cause (hybrid mode / grant propagation) before relying on
   named grants in a governed prod account.
-- Make the LF grants **reproducible as code** (optional
-  `AWS::LakeFormation::PrincipalPermissions` resources or a helper script), gated
-  for LF-governed accounts, so a fresh deploy doesn't need the manual steps.
+- **[DONE]** LF grants are now reproducible as code —
+  `AWS::LakeFormation::PrincipalPermissions` resources in
+  `DataCollectionModule.yaml` grant `IAM_ALLOWED_PRINCIPALS` on the database and
+  each table, gated by the `LakeFormationGoverned` parameter (default `no`). A
+  fresh deploy in an LF-only account no longer needs the manual grant step. The
+  deploying principal must still be an LF data-lake admin to create the database
+  (inherent chicken-and-egg, documented).
 
 ### Architecture (if HealthCompass is adopted separately)
 - HEIDI (`issue` → SLA/credit) and HealthCompass (`scheduledChange` PLE → ITSM

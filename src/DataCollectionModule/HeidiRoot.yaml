@@ -21,6 +21,17 @@ Parameters:
     Type: String
     Default: "na"
     Description: Enter KMS Arn if Athena Results bucket is encrypted with KMS(Type N for SSE encryption)
+  LakeFormationGoverned:
+    Type: String
+    Default: "no"
+    AllowedValues: [ "yes", "no" ]
+    Description: >-
+      Set "yes" if this account's AWS Glue Data Catalog is governed by Lake
+      Formation (LF-only mode). This creates LF grants on the Heidi database and
+      tables so Athena/QuickSight/the S3 extract can read them. Leave "no" for
+      IAM-only catalogs (default) to avoid creating unnecessary LF grants. NOTE:
+      the deploying principal must still be a Lake Formation data-lake admin to
+      create the database.
   QuickSightAnalysisAuthor:
       Type: String
       Default: "na"
@@ -155,6 +166,7 @@ Resources:
         ResourcePrefix: !Ref ResourcePrefix
         EnableHealthModule: !Ref EnableHealthModule
         OutputMode: !Ref OutputMode
+        LakeFormationGoverned: !Ref LakeFormationGoverned
 
 ####Notification Module Stack Start########
   NotificationModuleSetup:

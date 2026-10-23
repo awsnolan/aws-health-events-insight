@@ -72,7 +72,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       Handler: index.handler
-      Runtime: python3.12
+      Runtime: python3.14
       Timeout: 60
       MemorySize: 256
       ReservedConcurrentExecutions: 2

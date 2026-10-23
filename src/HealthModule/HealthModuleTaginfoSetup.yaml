@@ -117,7 +117,7 @@ Resources:
               except Exception as e:
                   print(response)
       Handler: index.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.14
       Timeout: 900
       ReservedConcurrentExecutions: 5
       Role: !GetAtt HealthModuleResourceExplorerRole.Arn
