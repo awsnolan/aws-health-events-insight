@@ -230,6 +230,49 @@ specifics) during the first deploy.
   workaround is the `IAM_ALLOWED_PRINCIPALS ALL` grant on the DB and each table
   (see the LF section above); grants-as-code is still backlog.
 
+### Service-usage filtering (`ServiceUsageMode`)
+
+Lets the operator keep only events for services the business actually uses,
+without having to pre-name services correctly (Health's `detail.service` is a
+short code, e.g. `CLOUDFRONT`, while `MULTIPLE_SERVICES` events carry long
+marketing names in free text — exact-string matching is hopeless).
+
+- **`off`** (default): no change — all events, no usage column.
+- **`flag`**: adds a `service_in_use` column (`Y`/`N`/`UNREVIEWED`) to both
+  extracts; nothing is dropped (shown-and-flagged).
+- **`filter`**: as `flag`, plus drops PUBLIC events whose service the operator
+  explicitly marked `in_use=N`. `ACCOUNT_SPECIFIC` events are always kept (AWS
+  only sends those to accounts with affected resources, so they are inherently
+  "used").
+
+How the name-matching problem is solved:
+- **Enumerate, don't invent.** Each run the Lambda enumerates the services
+  actually present in the data (the service-grain query is already exploded +
+  single-service, so it is the complete real-service universe) and writes a
+  `services_in_use.csv` reference the operator curates by editing one `in_use`
+  column. The values come from the data, so matching is exact by construction.
+- **Normalize** both sides to a canonical key (uppercase, strip non-alphanumerics,
+  drop `AWS`/`AMAZON` prefix) so casing/spacing/prefix variants collapse.
+- **Alias map** (tool-maintained, in the Lambda) bridges the long marketing
+  names from `MULTIPLE_SERVICES` free text onto the short codes
+  (`Elastic Compute Cloud` → `EC2`). Incomplete by design.
+- **Fail-open + new-service detection.** Anything not yet classified is kept and
+  flagged `UNREVIEWED`, never silently hidden. Each run lists services it has
+  not seen classified before in
+  `heidi-extracts/service-review/latest/new_services.csv` (and in the Lambda
+  response / CloudWatch log), and refreshes
+  `.../services_observed.csv`. The curated `services_in_use.csv` carries the
+  operator's decisions forward and auto-appends new services with a blank
+  `in_use` for them to review.
+- A `MULTIPLE_SERVICES` issue row is kept/flagged on its components: `Y` if any
+  component is in use, `N` only if every parsed component is explicitly excluded,
+  else `UNREVIEWED` (including when parsing yielded no components — the manual-
+  review guard).
+
+Reference file: `DataCollection-metadata/ReferenceOds/ServicesInUse/services_in_use.csv`
+(sample at `src/ReferenceOds/ServicesInUse/services_in_use_sample.csv`). The
+Lambda reads and rewrites it in place, preserving `in_use` decisions.
+
 Deploy-validated: the extract Lambda was invoked in `OutputMode=s3` and wrote
 both `issue.csv` and `service.csv` to `heidi-extracts/<dataset>/{latest,run=<ts>}/`.
 One gotcha surfaced — after the `awshealthevent` table is recreated (e.g. the

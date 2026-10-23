@@ -7,6 +7,13 @@ Description: >-
   dashboards. Reads the awshealthevent Glue table created by
   DataCollectionModule (so it works with no QuickSight deployed).
 
+  Optional service-usage awareness (ServiceUsageMode): the Lambda enumerates the
+  services actually present in the Health data, carries forward the operator's
+  in_use decisions from a reference CSV, flags each output row Y/N/UNREVIEWED,
+  and each run detects services it has not seen classified before and writes
+  them to an obvious "new services" report. Nothing is dropped unless the
+  operator explicitly marks a service not-in-use (and only in "filter" mode).
+
 Parameters:
   ResourcePrefix:
     Type: String
@@ -30,6 +37,20 @@ Parameters:
     Type: String
     Default: "rate(1 day)"
     Description: EventBridge schedule expression for the extract run.
+  ServiceUsageMode:
+    Type: String
+    Default: "off"
+    AllowedValues:
+      - "off"
+      - "flag"
+      - "filter"
+    Description: >-
+      off (default): include all events, no usage column (original behaviour).
+      flag: add a service_in_use column (Y/N/UNREVIEWED), maintain the
+      services_in_use reference, and report newly seen services; nothing is
+      dropped (shown-and-flagged). filter: same as flag, but additionally drop
+      PUBLIC events whose service the operator has explicitly marked in_use=N.
+      Account-specific events are always kept.
 
 Resources:
   S3ExtractRole:
@@ -97,9 +118,12 @@ Resources:
           OUTPUT_BUCKET: !Ref DataCollectionBucket
           FORMAT: !Ref ExtractFormat
           WORKGROUP: primary
+          SERVICE_USAGE_MODE: !Ref ServiceUsageMode
+          SERVICES_IN_USE_KEY: DataCollection-metadata/ReferenceOds/ServicesInUse/services_in_use.csv
       Code:
         ZipFile: |
-          import os, time, boto3
+          import os, time, io, csv, json, re
+          import boto3
 
           athena = boto3.client('athena')
           s3 = boto3.client('s3')
@@ -108,8 +132,40 @@ Resources:
           BUCKET = os.environ['OUTPUT_BUCKET']
           FMT = os.environ.get('FORMAT', 'CSV').upper()
           WG = os.environ.get('WORKGROUP', 'primary')
+          MODE = os.environ.get('SERVICE_USAGE_MODE', 'off').lower()
+          REF_KEY = os.environ.get('SERVICES_IN_USE_KEY',
+              'DataCollection-metadata/ReferenceOds/ServicesInUse/services_in_use.csv')
           TABLE = '"AwsDataCatalog"."' + DB + '"."awshealthevent"'
           TMP = 's3://' + BUCKET + '/heidi-extract-tmp/'
+
+          # Tool-maintained alias map: collapse common marketing/long names (as they
+          # appear in MULTIPLE_SERVICES free text) onto the short Health service code.
+          # Keys are already normalized (uppercase, alphanumeric only, AWS/AMAZON
+          # prefix stripped). Incomplete by design - the fail-open flag surfaces misses.
+          ALIAS = {
+              'ELASTICCOMPUTECLOUD': 'EC2',
+              'SIMPLESTORAGESERVICE': 'S3',
+              'RELATIONALDATABASESERVICE': 'RDS',
+              'ELASTICLOADBALANCING': 'ELB',
+              'ELASTICCONTAINERSERVICE': 'ECS',
+              'ELASTICKUBERNETESSERVICE': 'EKS',
+              'VIRTUALPRIVATECLOUD': 'VPC',
+              'SIMPLEQUEUESERVICE': 'SQS',
+              'SIMPLENOTIFICATIONSERVICE': 'SNS',
+              'IDENTITYANDACCESSMANAGEMENT': 'IAM',
+              'KEYMANAGEMENTSERVICE': 'KMS',
+              'DATABASEMIGRATIONSERVICE': 'DMS',
+              'ELASTICFILESYSTEM': 'EFS',
+          }
+
+          ISSUE_FIELDS = ['service', 'region', 'scope', 'start_time', 'end_time',
+                          'duration_hours', 'status', 'event_summary', 'event_arn',
+                          'affected_account', 'event_type_code', 'description']
+          SERVICE_FIELDS = ['service', 'service_status', 'region', 'start_time',
+                            'end_time', 'service_raw', 'event_type_code', 'event_arn',
+                            'affected_account']
+          REF_FIELDS = ['service_key', 'service_name', 'in_use', 'event_count',
+                        'first_seen', 'last_seen']
 
           ISSUE_SQL = (
               "WITH latest AS ("
@@ -136,6 +192,7 @@ Resources:
               "  SELECT detail.eventarn AS event_arn,"
               "         COALESCE(detail.affectedAccount, account) AS affected_account,"
               "         detail.eventregion AS region, detail.service AS service_raw,"
+              "         detail.eventscopecode AS scope,"
               "         detail.eventtypecode AS event_type_code,"
               "         CAST(date_parse(detail.starttime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS start_time,"
               "         CAST(date_parse(detail.endtime, '%a, %e %b %Y %H:%i:%s GMT') AS timestamp) AS end_time,"
@@ -143,24 +200,31 @@ Resources:
               "         rank() OVER (PARTITION BY detail.eventarn, COALESCE(detail.affectedAccount, account) ORDER BY time DESC) AS rk"
               "  FROM " + TABLE + " WHERE detail.eventtypecategory = 'issue'"
               "), parsed AS ("
-              "  SELECT event_arn, affected_account, region, service_raw, event_type_code, start_time, end_time,"
+              "  SELECT event_arn, affected_account, region, service_raw, scope, event_type_code, start_time, end_time,"
               "         regexp_extract(descr, 'affected by this event:\\s*([^.]*)', 1) AS affected_blob,"
               "         regexp_extract(descr, 'now operating normally:\\s*([^.]*)', 1) AS recovered_blob"
               "  FROM latest WHERE rk = 1)"
               " SELECT trim(regexp_replace(svc, '\\([^)]*\\)', '')) AS service, 'affected' AS service_status,"
-              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account"
+              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account, scope"
               " FROM parsed CROSS JOIN UNNEST(split(affected_blob, ',')) AS t(svc)"
               " WHERE affected_blob <> '' AND trim(regexp_replace(svc, '\\([^)]*\\)', '')) <> ''"
               " UNION ALL"
               " SELECT trim(regexp_replace(svc, '\\([^)]*\\)', '')) AS service, 'recovered' AS service_status,"
-              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account"
+              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account, scope"
               " FROM parsed CROSS JOIN UNNEST(split(recovered_blob, ',')) AS t(svc)"
               " WHERE recovered_blob <> '' AND trim(regexp_replace(svc, '\\([^)]*\\)', '')) <> ''"
               " UNION ALL"
               " SELECT service_raw AS service, 'single' AS service_status,"
-              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account"
+              "        region, start_time, end_time, service_raw, event_type_code, event_arn, affected_account, scope"
               " FROM parsed WHERE service_raw <> 'MULTIPLE_SERVICES'"
           )
+
+          def canon(s):
+              if not s:
+                  return ''
+              k = re.sub(r'[^A-Z0-9]', '', s.upper())
+              k = re.sub(r'^(AWS|AMAZON)', '', k)
+              return ALIAS.get(k, k)
 
           def run(query):
               qid = athena.start_query_execution(
@@ -175,26 +239,154 @@ Resources:
                       break
                   time.sleep(2)
               if state != 'SUCCEEDED':
-                  reason = qe['Status'].get('StateChangeReason', '')
-                  raise Exception('Athena ' + state + ': ' + reason)
+                  raise Exception('Athena ' + state + ': ' + qe['Status'].get('StateChangeReason', ''))
               return qid
+
+          def fetch(select):
+              qid = run(select)
+              obj = s3.get_object(Bucket=BUCKET, Key='heidi-extract-tmp/' + qid + '.csv')
+              return list(csv.DictReader(io.StringIO(obj['Body'].read().decode('utf-8'))))
+
+          def write_csv(rows, fields, key):
+              buf = io.StringIO()
+              w = csv.DictWriter(buf, fieldnames=fields, extrasaction='ignore', quoting=csv.QUOTE_ALL)
+              w.writeheader()
+              for r in rows:
+                  w.writerow({k: r.get(k, '') for k in fields})
+              s3.put_object(Bucket=BUCKET, Key=key, Body=buf.getvalue().encode('utf-8'))
+
+          def write_out(rows, fields, name, ts):
+              if FMT == 'JSON':
+                  body = '\n'.join(json.dumps({k: r.get(k, '') for k in fields}) for r in rows)
+                  ext = 'json'
+              else:
+                  buf = io.StringIO()
+                  w = csv.DictWriter(buf, fieldnames=fields, extrasaction='ignore', quoting=csv.QUOTE_ALL)
+                  w.writeheader()
+                  for r in rows:
+                      w.writerow({k: r.get(k, '') for k in fields})
+                  body = buf.getvalue()
+                  ext = 'csv'
+              for key in ('heidi-extracts/' + name + '/run=' + ts + '/' + name + '.' + ext,
+                          'heidi-extracts/' + name + '/latest/' + name + '.' + ext):
+                  s3.put_object(Bucket=BUCKET, Key=key, Body=body.encode('utf-8'))
+
+          def load_reference():
+              try:
+                  obj = s3.get_object(Bucket=BUCKET, Key=REF_KEY)
+                  rows = list(csv.DictReader(io.StringIO(obj['Body'].read().decode('utf-8'))))
+              except Exception:
+                  return {}
+              d = {}
+              for r in rows:
+                  k = (r.get('service_key') or '').strip()
+                  if not k:
+                      continue
+                  d[k.upper()] = {
+                      'in_use': (r.get('in_use') or '').strip(),
+                      'service_name': (r.get('service_name') or '').strip(),
+                      'first_seen': (r.get('first_seen') or '').strip(),
+                  }
+              return d
+
+          def flag_for(curated, key):
+              iu = (curated.get(key, {}).get('in_use', '') or '').strip().upper()
+              if iu == 'Y':
+                  return 'Y'
+              if iu == 'N':
+                  return 'N'
+              return 'UNREVIEWED'
 
           def handler(event, context):
               ts = str(int(time.time() * 1000))
-              results = {}
-              for name, select in (('issue', ISSUE_SQL), ('service', SERVICE_SQL)):
-                  dest = 's3://' + BUCKET + '/heidi-extracts/' + name + '/run=' + ts + '/'
-                  if FMT == 'JSON':
-                      run("UNLOAD (" + select + ") TO '" + dest + "' WITH (format = 'JSON')")
+              issue_rows = fetch(ISSUE_SQL)
+              service_rows = fetch(SERVICE_SQL)
+
+              if MODE == 'off':
+                  write_out(issue_rows, ISSUE_FIELDS, 'issue', ts)
+                  write_out(service_rows, SERVICE_FIELDS, 'service', ts)
+                  return {'ok': True, 'run': ts, 'mode': MODE, 'format': FMT,
+                          'issue_rows': len(issue_rows), 'service_rows': len(service_rows)}
+
+              curated = load_reference()
+
+              # Enumerate services actually present (service-grain rows are already
+              # exploded and single-service, so this is the full real-service universe)
+              # and the component services per event (for MULTIPLE_SERVICES issue rows).
+              observed = {}
+              arn_comp = {}
+              for r in service_rows:
+                  svc = (r.get('service') or '').strip()
+                  if not svc:
+                      continue
+                  k = canon(svc)
+                  if not k:
+                      continue
+                  o = observed.setdefault(k, {'name': svc, 'count': 0})
+                  o['count'] += 1
+                  arn_comp.setdefault(r.get('event_arn', ''), set()).add(k)
+
+              # Flag issue rows. Account-specific events are inherently "used".
+              for r in issue_rows:
+                  if (r.get('scope') or '') != 'PUBLIC':
+                      r['service_in_use'] = 'Y'
+                      continue
+                  svc = (r.get('service') or '').strip()
+                  if svc == 'MULTIPLE_SERVICES':
+                      flags = [flag_for(curated, k) for k in arn_comp.get(r.get('event_arn', ''), set())]
+                      if 'Y' in flags:
+                          r['service_in_use'] = 'Y'
+                      elif flags and all(f == 'N' for f in flags):
+                          r['service_in_use'] = 'N'
+                      else:
+                          r['service_in_use'] = 'UNREVIEWED'
                   else:
-                      qid = run(select)
-                      src = {'Bucket': BUCKET, 'Key': 'heidi-extract-tmp/' + qid + '.csv'}
-                      s3.copy_object(Bucket=BUCKET, CopySource=src,
-                                     Key='heidi-extracts/' + name + '/run=' + ts + '/' + name + '.csv')
-                      s3.copy_object(Bucket=BUCKET, CopySource=src,
-                                     Key='heidi-extracts/' + name + '/latest/' + name + '.csv')
-                  results[name] = dest
-              return {'ok': True, 'run': ts, 'format': FMT, 'outputs': results}
+                      r['service_in_use'] = flag_for(curated, canon(svc))
+
+              for r in service_rows:
+                  if (r.get('scope') or '') != 'PUBLIC':
+                      r['service_in_use'] = 'Y'
+                  else:
+                      r['service_in_use'] = flag_for(curated, canon(r.get('service', '')))
+
+              # filter mode: drop only PUBLIC events the operator explicitly excluded.
+              if MODE == 'filter':
+                  issue_rows = [r for r in issue_rows
+                                if not (r.get('scope') == 'PUBLIC' and r.get('service_in_use') == 'N')]
+                  service_rows = [r for r in service_rows
+                                  if not (r.get('scope') == 'PUBLIC' and r.get('service_in_use') == 'N')]
+
+              # New-service detection + reference merge (carry forward operator decisions).
+              new = sorted(k for k in observed if k not in curated)
+              merged = []
+              for k in sorted(set(curated) | set(observed)):
+                  cur = curated.get(k, {})
+                  obs = observed.get(k)
+                  merged.append({
+                      'service_key': k,
+                      'service_name': cur.get('service_name') or (obs['name'] if obs else k),
+                      'in_use': cur.get('in_use', ''),
+                      'event_count': str(obs['count']) if obs else '0',
+                      'first_seen': cur.get('first_seen') or ts,
+                      'last_seen': ts if obs else (cur.get('first_seen') or ''),
+                  })
+              write_csv(merged, REF_FIELDS, REF_KEY)
+
+              merged_by_key = {m['service_key']: m for m in merged}
+              write_csv([merged_by_key[k] for k in new], REF_FIELDS,
+                        'heidi-extracts/service-review/latest/new_services.csv')
+              write_csv([dict(merged_by_key[k], status=flag_for(curated, k)) for k in sorted(observed)],
+                        REF_FIELDS + ['status'],
+                        'heidi-extracts/service-review/latest/services_observed.csv')
+
+              write_out(issue_rows, ISSUE_FIELDS + ['service_in_use'], 'issue', ts)
+              write_out(service_rows, SERVICE_FIELDS + ['scope', 'service_in_use'], 'service', ts)
+
+              if new:
+                  print('NEW SERVICES DETECTED (' + str(len(new)) + '): ' + ', '.join(new))
+              return {'ok': True, 'run': ts, 'mode': MODE, 'format': FMT,
+                      'issue_rows': len(issue_rows), 'service_rows': len(service_rows),
+                      'new_services': new, 'new_service_count': len(new)}
 
   S3ExtractScheduleRule:
     Type: AWS::Events::Rule

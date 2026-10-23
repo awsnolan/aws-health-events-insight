@@ -1,0 +1,4 @@
+service_key,service_name,in_use,event_count,first_seen,last_seen
+EC2,EC2,Y,0,,
+CLOUDFRONT,CLOUDFRONT,N,0,,
+S3,Simple Storage Service,,0,,

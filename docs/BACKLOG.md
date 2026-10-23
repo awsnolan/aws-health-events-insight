@@ -64,9 +64,17 @@ section.
   corroborated against the AWS Health Dashboard service-history posts. Document
   this caveat where the dashboard is consumed.
 - **MULTIPLE_SERVICES parse is regex-on-free-text** and AWS wording isn't
-  contractual. Add a check/monitor that flags `issue` events whose description
-  yields zero parsed services ("needs manual review") rather than silently
-  dropping them.
+  contractual. **[PARTIALLY DONE]** `ServiceUsageMode` flags a `MULTIPLE_SERVICES`
+  issue row `UNREVIEWED` when parsing yields no (or unclassified) components,
+  rather than silently dropping it. A standalone monitor/alert for zero-parse
+  events is still worth adding.
+- **[DONE] Service-usage filtering** (`ServiceUsageMode` = off/flag/filter):
+  enumerate observed services from the data, operator curates `in_use` in a
+  reference CSV, each row flagged `Y`/`N`/`UNREVIEWED`, new services detected and
+  reported each run (fail-open, shown-and-flagged). Normalization + a
+  tool-maintained alias map bridge Health service codes vs. the long names in
+  MULTIPLE_SERVICES free text. Alias map is intentionally incomplete; extend it
+  as new long-name forms appear.
 - **Global events:** the real-time rule is region-scoped; many service events
   surface via us-east-1. Ensure us-east-1 capture so going-forward `issue`
   coverage is complete.

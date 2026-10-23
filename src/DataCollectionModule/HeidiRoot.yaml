@@ -130,6 +130,16 @@ Parameters:
     Type: String
     Default: "rate(1 day)"
     Description: When OutputMode includes S3, the EventBridge schedule expression.
+  ServiceUsageMode:
+    Type: String
+    Default: "off"
+    AllowedValues: [ "off", "flag", "filter" ]
+    Description: >-
+      S3 extract service-usage awareness. "off" (default): no change. "flag":
+      add a service_in_use column (Y/N/UNREVIEWED), maintain the services_in_use
+      reference CSV, and report newly seen services each run; nothing dropped.
+      "filter": also drop PUBLIC events whose service the operator marked
+      in_use=N. Account-specific events are always kept.
 
 Conditions:
   EnableHealthModule: !Equals [ !Ref EnableHealthModule, "yes"]
@@ -302,3 +312,4 @@ Resources:
         DataCollectionBucket: !Ref DataCollectionBucket
         ExtractFormat: !Ref ExtractFormat
         ExtractSchedule: !Ref ExtractSchedule
+        ServiceUsageMode: !Ref ServiceUsageMode
