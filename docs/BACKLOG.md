@@ -48,6 +48,15 @@ section.
 ## Additional (identified during the build)
 
 ### Dashboard / analysis
+- **UTC column labels:** `start_time` / `end_time` are UTC (parsed from Health's
+  `GMT` strings into timezone-naive timestamps — no offset applied) but carry no
+  timezone label. Rename to `start_time_utc` / `end_time_utc` in the S3 extract
+  output (both the issue and service datasets) and set the same names/titles in
+  the QuickSight datasets and analysis, so non-technical operators don't mistake
+  them for local time. Cosmetic only — no logic change, and `duration_hours` is
+  unaffected (difference of two UTC values). Touch points: `S3ExtractModule.yaml`
+  (ISSUE_FIELDS/SERVICE_FIELDS + SQL aliases), `HealthModuleIssueDataSetSetup.yaml`,
+  `HealthModuleServiceDataSetSetup.yaml`, `HealthModuleIssueQSAnalysis.yaml`.
 - **Relative-date control:** swap the absolute `DATE_RANGE` picker for a
   `RelativeDatesFilter` + `RelativeDateTimeControl` ("Last 3/6/12 months") to
   remove the padded absolute-slider bounds (2016–2036). Better UX for review.
