@@ -4,6 +4,11 @@ Follow-ups for the issue-focused HEIDI fork. The build is deployed and usable;
 these are the known tweaks and gaps. Priority is rough, top-to-bottom within each
 section.
 
+> The **Ingestion robustness** and **Code hygiene** items below have executable
+> specs in `tests/` (run `pytest`). They are `xfail`-marked until implemented, so
+> fixing an item turns its test green (an XPASS that flags the marker for
+> removal). See `tests/README.md`.
+
 ## Requested
 
 1. **Fix panel ordering (issue/SLA analysis).**

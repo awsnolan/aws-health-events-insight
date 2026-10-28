@@ -1,0 +1,4 @@
+pytest>=7,<9
+boto3>=1.26
+botocore>=1.29
+PyYAML>=6
