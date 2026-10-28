@@ -72,6 +72,24 @@ section.
   service events is incomplete and ~90-day retained. Credit candidates must be
   corroborated against the AWS Health Dashboard service-history posts. Document
   this caveat where the dashboard is consumed.
+- **`start_time`/`end_time`/`duration_hours` are the event's recorded lifecycle,
+  not measured impact.** `start_time` is when AWS opened the Health event
+  (can trail actual onset), `end_time` is when AWS marked it resolved (can run
+  past real recovery, or be null while the event is simply still open for
+  tracking — not necessarily ongoing impact). So `duration_hours` is an
+  event-open→resolved span, a triage signal, NOT certified downtime for a credit
+  calculation. Observed in this data: the CONNECT ap-northeast-1 event shows a
+  ~38-minute structured span while its description narrates a ~1.5-hour impact
+  window. Surface the caveat text block below next to the duration column
+  (dashboard + extract docs), and pair it with the `_utc` relabel item above.
+
+  > **Caveat — event times vs. service impact.** The start, end, and duration
+  > shown here come from the AWS Health event's recorded open→resolved window
+  > (in UTC), not a measurement of customer-facing service impact. They can
+  > start late, end late, or stay open for tracking after impact has ended.
+  > Before pursuing an SLA service credit, confirm the actual impact period and
+  > affected resources in the event's full description and the AWS Health
+  > Dashboard service-history post for that event.
 - **MULTIPLE_SERVICES parse is regex-on-free-text** and AWS wording isn't
   contractual. **[PARTIALLY DONE]** `ServiceUsageMode` flags a `MULTIPLE_SERVICES`
   issue row `UNREVIEWED` when parsing yields no (or unclassified) components,
