@@ -97,6 +97,9 @@ Set `ServiceUsageMode` to limit the extract to services your business actually u
 | `off` *(default)* | All events; no usage column. |
 | `flag` | Adds a `service_in_use` column (`Y`/`N`/`UNREVIEWED`); nothing dropped. |
 | `filter` | As `flag`, plus drops PUBLIC events for services you explicitly marked not-in-use. Account-specific events always kept. |
+| `allowlist` | Keep only services you marked in-use (`Y`); everything else dropped from the extract but still reported under `service-review/`. Account-specific events always kept. |
+
+Independently, **`RegionScope`** takes a comma-separated region allowlist (e.g. `global,ap-southeast-2`; empty = all regions) and hard-drops events outside those regions from both extracts. Use `global` for global-service events (Billing, IAM, CloudFront, Route 53).
 
 In `flag`/`filter` mode the Lambda maintains a `services_in_use.csv` reference (under `DataCollection-metadata/ReferenceOds/ServicesInUse/`, sample in the repo) that enumerates the services actually seen in your data — you just edit the `in_use` column (`Y`/`N`). Services it hasn't seen classified before are kept, flagged `UNREVIEWED`, and reported each run under `heidi-extracts/service-review/`, so new AWS services that ship never get silently hidden. Matching is normalized and alias-mapped so Health's service codes and the long names in `MULTIPLE_SERVICES` events line up. Full detail in [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
 

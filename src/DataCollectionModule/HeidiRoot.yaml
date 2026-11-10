@@ -133,13 +133,22 @@ Parameters:
   ServiceUsageMode:
     Type: String
     Default: "off"
-    AllowedValues: [ "off", "flag", "filter" ]
+    AllowedValues: [ "off", "flag", "filter", "allowlist" ]
     Description: >-
       S3 extract service-usage awareness. "off" (default): no change. "flag":
       add a service_in_use column (Y/N/UNREVIEWED), maintain the services_in_use
       reference CSV, and report newly seen services each run; nothing dropped.
       "filter": also drop PUBLIC events whose service the operator marked
-      in_use=N. Account-specific events are always kept.
+      in_use=N. "allowlist": keep only services marked in_use=Y (everything else
+      dropped from the main extract but still reported). Account-specific events
+      are always kept.
+  RegionScope:
+    Type: String
+    Default: ""
+    Description: >-
+      Optional comma-separated allowlist of regions to keep in the S3 extract,
+      e.g. "global,ap-southeast-2". Empty (default) keeps all regions. Rows
+      outside the list are dropped. Use "global" for global-service events.
 
 Conditions:
   EnableHealthModule: !Equals [ !Ref EnableHealthModule, "yes"]
@@ -313,3 +322,4 @@ Resources:
         ExtractFormat: !Ref ExtractFormat
         ExtractSchedule: !Ref ExtractSchedule
         ServiceUsageMode: !Ref ServiceUsageMode
+        RegionScope: !Ref RegionScope

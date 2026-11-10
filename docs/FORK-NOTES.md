@@ -244,6 +244,18 @@ marketing names in free text — exact-string matching is hopeless).
   explicitly marked `in_use=N`. `ACCOUNT_SPECIFIC` events are always kept (AWS
   only sends those to accounts with affected resources, so they are inherently
   "used").
+- **`allowlist`**: keep only services marked `in_use=Y` (plus account-specific,
+  which flag `Y`). Everything else — `N` and `UNREVIEWED` — is dropped from the
+  main extract but still listed in the new-services report, so nothing is lost
+  silently. This is the "show only the services I run" mode.
+
+**Region scope (`RegionScope`)** — independent of `ServiceUsageMode`, applies in
+every mode. A comma-separated allowlist of region codes (e.g.
+`global,ap-southeast-2`); empty (default) keeps all regions. Rows outside the
+list are hard-dropped from both extracts. Regions are canonical codes with no
+spelling/alias problem, so this is a plain parameter, not the curated-reference
+machinery. Use the literal `global` for global-service events (Billing, IAM,
+CloudFront, Route 53). Melbourne is `ap-southeast-4`, Sydney `ap-southeast-2`.
 
 How the name-matching problem is solved:
 - **Enumerate, don't invent.** Each run the Lambda enumerates the services
