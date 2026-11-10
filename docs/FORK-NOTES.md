@@ -1,4 +1,8 @@
-# Fork notes
+# Fork notes — HEIDI for Availability
+
+This fork is branded **HEIDI for Availability**: it reorients HEIDI toward AWS
+service-availability / SLA review by scoping the analysis, output, and action
+layers to service-interruption (`issue`) events, while ingestion stays broad.
 
 Changes maintained in this fork on top of upstream `aws-health-events-insight`,
 plus the operational prerequisites that are not captured by the CloudFormation

@@ -1,5 +1,10 @@
-## **Health Events Intelligence Dashboards and Insights (HEIDI)**
-Single pane of glass for all your Health events across different accounts, regions and organizations.
+## **HEIDI for Availability**
+An availability- and SLA-focused fork of HEIDI (Health Events Intelligence Dashboards and Insights). It turns AWS Health **service-interruption (`issue`) events** into a simple record that a business user can triage to decide whether a service-availability impact is worth pursuing as an SLA service credit — across accounts, regions and organizations.
+
+> HEIDI records the AWS-side service event; it is not an availability/SLA
+> measurement tool. Event times reflect the Health event's recorded
+> open→resolved window, not measured impact. Always confirm the actual impact
+> period against the AWS Health Dashboard service-history post before acting.
 
  ![Alt Text](https://github.com/awsnolan/aws-health-events-insight/blob/main/img/dashboard.gif)
 
@@ -21,20 +26,20 @@ Single pane of glass for all your Health events across different accounts, regio
 - [Update Metadata](#update-metadata-optional)
 - [Backfill HealthEvents](#backfill-healthevents-optional)
 - [Setup Validation](#setup-validation)
-- [SLA / Issue-Event Use Case](#sla--issue-event-use-case)
+- [Availability & SLA Use Case](#availability--sla-use-case)
 - [Troubleshooting](#troubleshooting)
 
 ## **Whats New?**
-*NEW:* Heidi now presents an efficient mechanism for data collection, visualization, and notifications. Operating on an event-driven model, Heidi simplifies the collection of data from various AWS services across numerous accounts within multiple AWS organizations. Heidi can surface the collected events either as scheduled **S3 CSV/JSON extracts** (the default, no QuickSight required) or as **QuickSight dashboards**, enabling customers to conveniently access a comprehensive overview without the need to log in to each individual AWS account.
+*Premise of this fork:* **availability.** HEIDI for Availability scopes the analysis and action layers to AWS Health **service-interruption (`issue`) events** — the ones that signal a potential service-availability impact and SLA-credit opportunity — while still ingesting the full event feed into the S3 lake ("broad lake, narrow output"). Operating on an event-driven model, it collects data from AWS services across many accounts and AWS Organizations, then surfaces the interruption record either as scheduled **S3 CSV/JSON extracts** (the default, no QuickSight required) or as **QuickSight dashboards** — so a non-technical reviewer gets a clear availability picture without logging into each account.
 
-Heidi consists of the following modules:
+It consists of the following modules:
 
-* **Health Module** — unified view of upcoming events, planned events (EOL), scheduled events and issues across all AWS accounts and AWS Organizations.
-* **Output Module** — scheduled Athena extract of the issue (event-grain) and service-grain data to S3 as CSV or JSON. Deployed when `OutputMode` is `s3` or `both`.
+* **Health Module** — collects AWS Health events across all accounts and AWS Organizations (all categories ingested; the output layers focus on `issue`/availability events).
+* **Output Module** — scheduled Athena extract of the issue (event-grain) and service-grain data to S3 as CSV or JSON, with optional region scoping and service-usage filtering. Deployed when `OutputMode` is `s3` or `both`.
 * **Notification Module** — powered by AWS Chatbot to get notifications on Slack or Teams.
 * **Credit/Ticketing Module** *(opt-in)* — opens Jira tickets to evaluate service-interruption (`issue`) events for SLA service credits. Off by default (`EnableCreditModule=no`).
 
-This fork is oriented toward triaging service-interruption (`issue`) events for SLA review. The issue/SLA datasets, the service-grain `MULTIPLE_SERVICES` explosion, the credit module, and the Lake Formation prerequisites are documented in detail in [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
+The issue/SLA datasets, the service-grain `MULTIPLE_SERVICES` explosion, service-usage and region scoping, the credit module, and the Lake Formation prerequisites are documented in detail in [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
 
 ## **Solution Architecture**
 
@@ -217,9 +222,9 @@ You will see the event land in Amazon S3 under `DataCollection-data/`. To see it
 - **S3 mode:** invoke the extract Lambda and check `heidi-extracts/`.
 - **QuickSight mode:** refresh the QuickSight dataset manually.
 
-## **SLA / Issue-Event Use Case**
+## **Availability & SLA Use Case**
 
-This fork is purpose-built to help triage AWS service-interruption (`issue`) events for SLA service-credit decisions. Ingestion stays broad (all event categories land in the S3 lake), while the issue/SLA datasets, dashboard, and the optional credit-ticketing module are scoped to `eventTypeCategory = 'issue'`. The full design — the event-grain and service-grain (`MULTIPLE_SERVICES` explosion) datasets, neutral-vocabulary labelling, the Jira credit module, and the Lake Formation prerequisites — is documented in [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
+HEIDI for Availability is purpose-built to help triage AWS service-interruption (`issue`) events — service-availability impacts — for SLA service-credit decisions. Ingestion stays broad (all event categories land in the S3 lake), while the issue/SLA datasets, dashboard, and the optional credit-ticketing module are scoped to `eventTypeCategory = 'issue'`. The full design — the event-grain and service-grain (`MULTIPLE_SERVICES` explosion) datasets, neutral-vocabulary labelling, the Jira credit module, and the Lake Formation prerequisites — is documented in [docs/FORK-NOTES.md](docs/FORK-NOTES.md).
 
 > HEIDI records the AWS-side service event; it is not an availability/SLA
 > measurement tool. Corroborate anything used for a credit claim against the
