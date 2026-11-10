@@ -7,3 +7,15 @@ __pycache__/
 build.log
 src/Setup/lf-settings.json
 checkpoint_*.json
+
+# OS / editor cruft (also covered by .* above; explicit for clarity)
+.DS_Store
+
+# Python dev tooling
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+
+# Local working copy of the service allowlist, if downloaded to edit
+/services_in_use.csv
